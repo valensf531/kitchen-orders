@@ -1,0 +1,36 @@
+# Plantilla por cliente (un archivo como este por restaurante).
+# En Dokploy esto se arma con UI (App + Database Postgres); este archivo
+# sirve de referencia y para levantar un cliente manual con compose.
+# Cada cliente tiene su .env propio (ver .env.example) y su DB propia.
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env.cliente
+    environment:
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lumen
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Definí DB_PASSWORD en el .env}
+      POSTGRES_DB: lumen
+    volumes:
+      - pgdata-cliente:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumen"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata-cliente:

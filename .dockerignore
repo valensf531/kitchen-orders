@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env*.local
+.env
+vercel
+auth.db
+*.tsbuildinfo
+Dockerfile
+.dockerignore
+README.md
+ROADMAP.md

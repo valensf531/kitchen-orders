@@ -1,0 +1,14 @@
+Necesito reestructurar el sistema actual reemplazando el navbar superior por un sidebar lateral, el cual debe estar dividido claramente 
+en dos secciones principales separadas: Cocina y Salón. Dentro del módulo Salón, específicamente en la categoría Comedor, se debe dividir
+la visualización por zonas: Patio Interno y Patio Externo. Cada zona debe permitir la creación y gestión dinámica de mesas, donde el
+usuario pueda añadir, eliminar y editar mesas libremente. Cada mesa debe tener un número único configurable y no pueden existir números
+duplicados dentro de la misma zona. Las mesas deben mostrarse como elementos interactivos (por ejemplo cards o botones visuales) y 
+deben cambiar su apariencia según su estado: disponible, ocupada, pago pendiente o pagado. Además, dentro del tab de Salón debe
+visualizarse claramente el estado del pago (pagado o impago) directamente en la tarjeta de cada mesa, con diferenciación visual
+clara (por ejemplo colores). Todas las mesas creadas en Salón deben sincronizarse automáticamente con la sección Cocina, mostrando 
+exactamente las mismas mesas con el mismo número; si una mesa se elimina en Salón, debe eliminarse también en Cocina. 
+Esta sincronización debe funcionar en tiempo real o mediante actualización automática inmediata. Todas las mesas deben 
+almacenarse en base de datos asi se guardan aunque la app se reinicie. El sistema debe ser escalable para soportar muchas mesas y
+mantener consistencia de datos en todo momento. El objetivo final es un sistema completamente interactivo donde el usuario pueda 
+administrar las mesas por zona de manera flexible, con sincronización automática entre Salón y Cocina y una visualización clara
+y dinámica del estado de cada mesa y su pago.
