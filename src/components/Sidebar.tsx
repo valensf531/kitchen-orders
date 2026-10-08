@@ -366,15 +366,59 @@ export function Sidebar({
     onSectionChange(section);
   };
 
+  const mobileTabs: { id: SidebarSection | 'more'; label: string; icon: typeof ChefHat; active: boolean; activeClass: string; badge?: number }[] = [
+    { id: 'kitchen', label: 'Cocina', icon: ChefHat, active: activeSection === 'kitchen', activeClass: 'text-indigo-700', badge: activeOrdersCount },
+    ...(!isKitchen ? [
+      { id: 'dining' as const, label: 'Salón', icon: UtensilsCrossed, active: activeSection === 'dining', activeClass: 'text-teal-700' },
+      { id: 'cashier' as const, label: 'Caja', icon: Banknote, active: activeSection === 'cashier', activeClass: 'text-emerald-700' },
+    ] : []),
+  ];
+
   return (
     <>
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-30 p-2.5 bg-white text-slate-700 rounded-xl shadow-lg border border-slate-200 hover:bg-slate-50"
-        aria-label="Abrir menú"
+      {/* Barra inferior móvil: al alcance del pulgar. "Más" abre el panel
+          con pestañas de cocina, zonas, estadísticas y ajustes. */}
+      <nav
+        aria-label="Navegación principal"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 px-2 pt-1.5"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 6px)' }}
       >
-        <Menu className="w-5 h-5" />
-      </button>
+        <div className="grid" style={{ gridTemplateColumns: `repeat(${mobileTabs.length + 1}, minmax(0, 1fr))` }}>
+          {mobileTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleSectionChange(tab.id as SidebarSection)}
+                aria-current={tab.active ? 'page' : undefined}
+                className={`flex flex-col items-center gap-0.5 py-1.5 rounded-xl text-[10px] font-semibold transition-colors ${
+                  tab.active ? tab.activeClass : 'text-slate-400'
+                }`}
+              >
+                <span className="relative">
+                  <Icon className="w-6 h-6" />
+                  {typeof tab.badge === 'number' && tab.badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 rounded-full bg-indigo-600 text-white text-[9px] font-bold flex items-center justify-center">
+                      {tab.badge}
+                    </span>
+                  )}
+                </span>
+                {tab.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Abrir menú completo"
+            className="flex flex-col items-center gap-0.5 py-1.5 rounded-xl text-[10px] font-semibold text-slate-400"
+          >
+            <Menu className="w-6 h-6" />
+            Más
+          </button>
+        </div>
+      </nav>
 
       {mobileOpen && (
         <div 

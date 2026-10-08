@@ -6,6 +6,7 @@ export interface PricedMenuItem {
   name: string;
   price: number | string;
   available: boolean;
+  categoryId?: string;
 }
 
 export type ResolveOrderItemsResult =
@@ -28,7 +29,12 @@ const MAX_NOTES_LENGTH = 300;
 export function resolveOrderItems(
   menuItems: PricedMenuItem[],
   incoming: unknown,
-  options: { strict: boolean },
+  options: {
+    strict: boolean;
+    /* kind por categoryId ('drink' para bebidas): la cocina lo usa para el
+       checkbox de entrega. Sin mapa, el item queda sin categoría. */
+    categoryKinds?: Map<string, 'food' | 'drink'>;
+  },
 ): ResolveOrderItemsResult {
   if (!Array.isArray(incoming) || incoming.length === 0) {
     return { ok: false, error: 'El pedido no tiene items' };
@@ -75,7 +81,16 @@ export function resolveOrderItems(
         return { ok: false, error: `${menuItem.name} no está disponible ahora` };
       }
       const price = Number(menuItem.price) || 0;
-      items.push({ name: menuItem.name, quantity, price, notes, menuItemId: menuItem.id });
+      const kind =
+        (menuItem.categoryId && options.categoryKinds?.get(menuItem.categoryId)) ?? undefined;
+      items.push({
+        name: menuItem.name,
+        quantity,
+        price,
+        notes,
+        menuItemId: menuItem.id,
+        ...(kind ? { category: kind } : {}),
+      });
       total += price * quantity;
       continue;
     }

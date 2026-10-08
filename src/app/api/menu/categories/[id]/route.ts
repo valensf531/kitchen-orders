@@ -21,7 +21,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Missing required field: name' }, { status: 400 });
     }
 
-    const category = await menuStore.updateCategory(id, userId, body.name);
+    const kind = body.kind === undefined ? undefined : body.kind === 'drink' ? 'drink' : 'food';
+
+    const category = await menuStore.updateCategory(id, userId, body.name, kind);
 
     if (!category) {
       return NextResponse.json({ error: 'Category not found' }, { status: 404 });

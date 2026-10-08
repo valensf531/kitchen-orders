@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/access';
-import { deleteStaffSessionsOnly, findByEmail, linkStaff, listStaff } from '@/lib/user-store';
+import { createUserWithPassword, findByEmail, linkStaff, listStaff } from '@/lib/user-store';
 import { logError } from '@/lib/log';
 
 function isEmail(value: unknown): value is string {
@@ -67,37 +67,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres' }, { status: 400 });
     }
 
-    /* Alta contra el endpoint público de auth del MISMO origen con fetch
-       server-side (sin cookies): el Set-Cookie de la sesión auto-creada
-       queda en ESA respuesta y se descarta.
-       NO llamar a signUpEmail por .api acá: el plugin nextCookies copiaría
-       la cookie del vendor sobre la respuesta en curso y desloguearía al
-       admin (su token muere al borrar las sesiones del vendor). */
-    let createdId: string;
+    /* Alta directa por SQL sin sesión: no toca la cookie del admin que
+       da el alta (signUpEmail crearía sesión y nextCookies la copiaría
+       sobre la respuesta, deslogueándolo). */
+    let created: { id: string; name: string; email: string };
     try {
-      const signUpUrl = new URL('/api/auth/sign-up/email', request.url);
-      const signUpRes = await fetch(signUpUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
+      created = await createUserWithPassword({
+        name,
+        email,
+        password,
+        role: kind,
+        ownerId: admin.restaurantId,
       });
-      const signUpData = (await signUpRes.json().catch(() => null)) as {
-        user?: { id?: unknown };
-      } | null;
-      const newId = signUpData?.user?.id;
-      if (!signUpRes.ok || typeof newId !== 'string' || newId.length === 0) {
-        logError('users.POST.signup', signUpData);
-        return NextResponse.json({ error: 'No se pudo crear la cuenta (¿email ya registrado?)' }, { status: 400 });
-      }
-      createdId = newId;
     } catch (error) {
       logError('users.POST.signup', error);
-      return NextResponse.json({ error: 'No se pudo crear la cuenta (¿email ya registrado?)' }, { status: 400 });
+      const code = (error as { code?: string })?.code;
+      if (code === '23505') {
+        return NextResponse.json({ error: 'Ese email ya está registrado' }, { status: 409 });
+      }
+      return NextResponse.json({ error: 'No se pudo crear la cuenta' }, { status: 500 });
     }
 
-    await linkStaff(createdId, admin.restaurantId, kind);
-    await deleteStaffSessionsOnly(createdId);
-    return NextResponse.json({ staff: { id: createdId, name, email, role: kind }, linked: false }, { status: 201 });
+    return NextResponse.json(
+      { staff: { id: created.id, name: created.name, email: created.email, role: kind }, linked: false },
+      { status: 201 },
+    );
   } catch (error) {
     logError('users.POST', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

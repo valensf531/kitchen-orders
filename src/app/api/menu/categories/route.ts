@@ -19,8 +19,9 @@ export async function POST(request: NextRequest) {
 
     const categories = await menuStore.getCategories(userId);
     const order = body.order ?? categories.length;
+    const kind = body.kind === 'drink' ? 'drink' : 'food';
 
-    const category = await menuStore.createCategory(userId, body.name, order);
+    const category = await menuStore.createCategory(userId, body.name, order, kind);
 
     revalidatePublicMenu(userId);
 

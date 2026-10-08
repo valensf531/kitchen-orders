@@ -1,4 +1,6 @@
 import { getSql } from '@/lib/db';
+import { hashPassword } from 'better-auth/crypto';
+import { randomUUID } from 'node:crypto';
 
 export interface StaffUser {
   id: string;
@@ -66,6 +68,34 @@ export async function linkStaff(
 export async function deleteStaffSessionsOnly(userId: string): Promise<void> {
   const sql = getSql();
   await sql`DELETE FROM session WHERE "userId" = ${userId}`;
+}
+
+/* Crea un usuario con cuenta de contraseña directo por SQL, SIN sesión:
+   no toca cookies (a diferencia de signUpEmail, que desloguearía al admin
+   que da el alta por el plugin nextCookies). El email se guarda en
+   minúsculas como hace better-auth. Lanza 23505 si el email ya existe. */
+export async function createUserWithPassword(input: {
+  name: string;
+  email: string;
+  password: string;
+  role: 'admin' | 'staff' | 'kitchen';
+  ownerId: string | null;
+}): Promise<{ id: string; name: string; email: string }> {
+  const sql = getSql();
+  const id = randomUUID().replace(/-/g, '');
+  const now = new Date().toISOString();
+  const email = input.email.trim().toLowerCase();
+  const hash = await hashPassword(input.password);
+  await sql`
+    INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt", role, "ownerId")
+    VALUES (${id}, ${input.name}, ${email}, false, ${now}, ${now}, ${input.role}, ${input.ownerId})
+  `;
+  const accountId = randomUUID().replace(/-/g, '');
+  await sql`
+    INSERT INTO account (id, "accountId", "providerId", "userId", password, "createdAt", "updatedAt")
+    VALUES (${accountId}, ${id}, 'credential', ${id}, ${hash}, ${now}, ${now})
+  `;
+  return { id, name: input.name, email };
 }
 
 /* Quita el acceso: borra sesiones, cuentas y usuario (cascada manual). */

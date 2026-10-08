@@ -33,6 +33,30 @@ describe('resolveOrderItems', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('marca category drink según la categoría (checkbox de cocina)', () => {
+    const menuWithCats: PricedMenuItem[] = [
+      { id: 'item-1', name: 'Pizza Margherita', price: 12, available: true, categoryId: 'cat-food' },
+      { id: 'item-3', name: 'Coca-Cola', price: 3.5, available: true, categoryId: 'cat-drinks' },
+    ];
+    const result = resolveOrderItems(
+      menuWithCats,
+      [{ id: 'item-1', quantity: 1 }, { id: 'item-3', quantity: 1 }],
+      { strict: true, categoryKinds: new Map([['cat-food', 'food'], ['cat-drinks', 'drink']]) },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.items[0].category).toBe('food');
+      expect(result.items[1].category).toBe('drink');
+    }
+  });
+
+  it('sin mapa de categorías no agrega category', () => {
+    const result = resolveOrderItems(menu, [{ id: 'item-3', quantity: 1 }], { strict: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.items[0].category).toBeUndefined();
+    }
+  });
   it('rechaza items no disponibles', () => {
     const result = resolveOrderItems(menu, [{ id: 'item-2', quantity: 1 }], { strict: true });
     expect(result.ok).toBe(false);

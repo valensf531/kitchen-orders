@@ -116,7 +116,8 @@ export async function POST() {
     const created: { categories: string[]; items: number } = { categories: [], items: 0 };
 
     for (const cat of SEED_MENU) {
-      const category = await menuStore.createCategory(userId, cat.name, cat.order);
+      const kind = /bebida|drink/i.test(cat.name) ? 'drink' : 'food';
+      const category = await menuStore.createCategory(userId, cat.name, cat.order, kind);
       created.categories.push(category.name);
 
       for (const item of cat.items) {

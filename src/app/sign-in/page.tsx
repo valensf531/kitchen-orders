@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { signIn } from '@/lib/auth-client';
-import { Eye, EyeOff, UtensilsCrossed, Loader2, CircleAlert, QrCode } from 'lucide-react';
+import { Eye, EyeOff, UtensilsCrossed, Loader2, CircleAlert, QrCode, ChefHat, Banknote, KeyRound } from 'lucide-react';
 
 export default function SignInPage() {
   const [email, setEmail] = useState('');
@@ -55,8 +55,15 @@ export default function SignInPage() {
         </div>
 
         <div className="surface p-6 shadow-lift sm:p-8">
-          <h2 className="text-2xl font-bold tracking-tight text-ink">Bienvenido</h2>
-          <p className="mt-1.5 text-sm text-ink-soft">Iniciá sesión para entrar al panel de cocina.</p>
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-field bg-brand-soft text-brand-ink">
+              <KeyRound className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-ink">Bienvenido</h2>
+              <p className="text-sm text-ink-soft">Entrá con tu cuenta del restaurante.</p>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="mt-7 space-y-5" noValidate>
             <div>
@@ -130,18 +137,21 @@ export default function SignInPage() {
             </button>
           </form>
 
-          <div className="mt-6 flex items-center gap-3">
-            <span className="h-px flex-1 bg-line" aria-hidden="true" />
-            <span className="text-xs font-semibold uppercase tracking-widest text-ink-muted">o</span>
-            <span className="h-px flex-1 bg-line" aria-hidden="true" />
+          <div className="mt-6 flex items-center justify-center gap-4 text-ink-muted">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+              <ChefHat className="h-3.5 w-3.5" aria-hidden="true" /> Cocina
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+              <UtensilsCrossed className="h-3.5 w-3.5" aria-hidden="true" /> Salón
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+              <Banknote className="h-3.5 w-3.5" aria-hidden="true" /> Caja
+            </span>
           </div>
 
-          <Link
-            href="/sign-up"
-            className="mt-5 flex w-full items-center justify-center rounded-field bg-brand-soft px-5 py-3 text-sm font-bold text-brand-ink transition-colors hover:bg-brand hover:text-ink focus-visible:ring-2 focus-visible:ring-brand-strong focus-visible:ring-offset-2"
-          >
-            Crear una cuenta nueva
-          </Link>
+          <p className="mt-5 text-center text-xs text-ink-muted">
+            ¿Sin cuenta? Pedísela al administrador de tu restaurante.
+          </p>
         </div>
 
         <Link

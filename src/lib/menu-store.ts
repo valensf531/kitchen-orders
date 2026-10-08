@@ -1,11 +1,14 @@
 import { getSql } from '@/lib/db';
 import { normalizeTone } from '@/lib/menu-tags';
 
+export type MenuCategoryKind = 'food' | 'drink';
+
 export interface MenuCategory {
   id: string;
   userId: string;
   name: string;
   order: number;
+  kind: MenuCategoryKind;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,6 +55,7 @@ type CategoryRow = {
   user_id: string;
   name: string;
   order: number;
+  kind: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -97,6 +101,7 @@ function mapRowToCategory(row: CategoryRow): MenuCategory {
     userId: row.user_id,
     name: row.name,
     order: row.order,
+    kind: row.kind === 'drink' ? 'drink' : 'food',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -160,6 +165,7 @@ class MenuStore {
           )
         `;
         await sql`CREATE INDEX IF NOT EXISTS idx_menu_tags_user_id ON menu_tags(user_id)`;
+        await sql`ALTER TABLE menu_categories ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'food'`;
       })().catch((error) => {
         this.menuColumnsReady = null;
         throw error;
@@ -217,14 +223,19 @@ class MenuStore {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
   }
 
-  async createCategory(userId: string, name: string, order: number): Promise<MenuCategory> {
+  async createCategory(
+    userId: string,
+    name: string,
+    order: number,
+    kind: MenuCategoryKind = 'food',
+  ): Promise<MenuCategory> {
     const sql = getSql();
     const id = `CAT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date().toISOString();
 
     await sql`
-      INSERT INTO menu_categories (id, user_id, name, "order", created_at, updated_at)
-      VALUES (${id}, ${userId}, ${name}, ${order}, ${now}, ${now})
+      INSERT INTO menu_categories (id, user_id, name, "order", kind, created_at, updated_at)
+      VALUES (${id}, ${userId}, ${name}, ${order}, ${kind}, ${now}, ${now})
     `;
 
     return {
@@ -232,18 +243,32 @@ class MenuStore {
       userId,
       name,
       order,
+      kind,
       createdAt: now,
       updatedAt: now,
     };
   }
 
-  async updateCategory(id: string, userId: string, name: string): Promise<MenuCategory | undefined> {
+  async updateCategory(
+    id: string,
+    userId: string,
+    name: string,
+    kind?: MenuCategoryKind,
+  ): Promise<MenuCategory | undefined> {
     const sql = getSql();
     const now = new Date().toISOString();
 
-    const result = await sql`
-      UPDATE menu_categories 
+    const result =
+      kind === undefined
+        ? await sql`
+      UPDATE menu_categories
       SET name = ${name}, updated_at = ${now}
+      WHERE id = ${id} AND user_id = ${userId}
+      RETURNING *
+    `
+        : await sql`
+      UPDATE menu_categories
+      SET name = ${name}, kind = ${kind}, updated_at = ${now}
       WHERE id = ${id} AND user_id = ${userId}
       RETURNING *
     `;

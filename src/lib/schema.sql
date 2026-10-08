@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS menu_categories (
 
 CREATE INDEX IF NOT EXISTS idx_menu_categories_user_id ON menu_categories(user_id);
 
+-- Tipo de categoría: 'food' o 'drink'. La cocina usa 'drink' para mostrar
+-- el checkbox de bebidas (se entregan primero).
+ALTER TABLE menu_categories ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'food';
+
 -- Tabla de items de menú
 CREATE TABLE IF NOT EXISTS menu_items (
   id VARCHAR(50) PRIMARY KEY,

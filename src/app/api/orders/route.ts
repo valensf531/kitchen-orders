@@ -64,7 +64,9 @@ export async function POST(request: NextRequest) {
     /* Precios y total siempre desde el menú de la base; el personal puede
        cargar items libres con precio numérico validado. */
     const menuItems = await menuStore.getItems(userId);
-    const resolved = resolveOrderItems(menuItems, body.items, { strict: false });
+    const categories = await menuStore.getCategories(userId);
+    const categoryKinds = new Map(categories.map((c) => [c.id, c.kind] as const));
+    const resolved = resolveOrderItems(menuItems, body.items, { strict: false, categoryKinds });
     if (!resolved.ok) {
       return NextResponse.json({ error: resolved.error }, { status: 400 });
     }

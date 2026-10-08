@@ -118,7 +118,9 @@ export async function POST(request: NextRequest) {
 
     /* Precios y total SIEMPRE desde la base: se ignora lo que manda el cliente. */
     const menuItems = await menuStore.getItems(userId);
-    const resolved = resolveOrderItems(menuItems, body.items, { strict: true });
+    const categories = await menuStore.getCategories(userId);
+    const categoryKinds = new Map(categories.map((c) => [c.id, c.kind] as const));
+    const resolved = resolveOrderItems(menuItems, body.items, { strict: true, categoryKinds });
     if (!resolved.ok) {
       return NextResponse.json({ error: resolved.error }, { status: 400 });
     }

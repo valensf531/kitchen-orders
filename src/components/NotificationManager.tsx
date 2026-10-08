@@ -58,7 +58,7 @@ export function NotificationManager({ orders }: NotificationManagerProps) {
   if (visibleOverdue.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 max-w-sm toast-in">
+    <div className="fixed bottom-24 right-4 left-4 sm:left-auto z-50 sm:max-w-sm toast-in">
       <div className="bg-gradient-to-br from-red-600 to-red-700 text-white p-4 rounded-xl shadow-2xl shadow-red-500/30 border border-red-500/50 backdrop-blur-sm">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0 animate-pulse">

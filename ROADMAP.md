@@ -6,6 +6,8 @@
 - [ ] QR impreso real verificado con celular
 - [ ] Caja real: cobro → libera mesa → suma en estadísticas
 - [ ] Quitar `console.log` de debug en auth
+- [ ] Rediseño de la página de login
+- [ ] Deshabilitar la creación de cuentas desde el panel de login
 - [ ] Bugs que aparezcan en prueba diaria
 - [ ] **Fase Docker** (al final): Dockerfile + compose plantilla + script multi-cliente + guía de alta
 

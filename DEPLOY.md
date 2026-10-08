@@ -28,8 +28,18 @@ Entrá al panel en `http://IP-VPS:3000` y creá el usuario admin.
 4. En la App → **Domains**: agregar el dominio del cliente (TLS automático).
 5. **Deploy**. Al arrancar, el contenedor corre `node scripts/migrate.mjs`
    (idempotente) y luego la app.
-6. Entrar a `https://dominio-del-cliente/sign-up` y crear la cuenta dueña
-   (queda como administradora de ese restaurante).
+6. Entrar a `https://dominio-del-cliente/sign-in` con la cuenta dueña
+   (creada abajo). El registro público está desactivado a propósito.
+
+## 2b. Crear la cuenta dueña de un cliente
+El registro desde la web está cerrado (nadie se auto-crea restaurantes).
+El dueño lo das de alta vos por única vez contra SU base:
+```bash
+DATABASE_URL="postgresql://..." npm run create-owner -- \
+  --email dueno@ejemplo.com --password ClaveSegura123 --name "Nombre"
+```
+El personal (vendedores/cocineros) lo crea después cada dueño desde
+Configuración → Personal.
 
 ## 3. Cliente nuevo (5 minutos)
 1. Duplicar la App dentro del proyecto (o crear otra igual).

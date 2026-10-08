@@ -23,6 +23,10 @@ export function getAuth(): AuthInstance {
     database: _pool,
     emailAndPassword: {
       enabled: true,
+      /* Registro público cerrado: los dueños los da de alta el SaaS
+         (scripts/create-owner.mjs) y el personal lo crea cada admin desde
+         Configuración. Así nadie se auto-crea restaurantes gratis. */
+      disableSignUp: true,
     },
     user: {
       additionalFields: {
