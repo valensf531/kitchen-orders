@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { menuStore } from '@/lib/menu-store';
-import { requireAdmin } from '@/lib/access';
+import { requireAccess, requireAdmin } from '@/lib/access';
 import { validateItemFields } from '@/lib/menu-validation';
 import { revalidatePublicMenu } from '@/lib/menu-cache';
 
@@ -9,12 +9,6 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const admin = await requireAdmin();
-    if (!admin) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    const userId = admin.restaurantId;
-
     const { id } = await params;
     const body = await request.json();
 
@@ -22,6 +16,22 @@ export async function PUT(
     if (fieldError) {
       return NextResponse.json({ error: fieldError }, { status: 400 });
     }
+
+    /* Solo cambiar disponibilidad (agotado/reponer desde Salón): lo puede
+       hacer el vendedor. Cualquier otro cambio es configuración (admin). */
+    const keys = Object.keys(body);
+    const onlyAvailability =
+      keys.length === 1 && keys[0] === 'available' && typeof body.available === 'boolean';
+
+    const access = onlyAvailability ? await requireAccess() : await requireAdmin();
+    if (!access) {
+      return NextResponse.json({ error: onlyAvailability ? 'Unauthorized' : 'Forbidden' }, { status: onlyAvailability ? 401 : 403 });
+    }
+    /* Cocina no toca el menú ni siquiera para stock. */
+    if (onlyAvailability && access.role === 'kitchen') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    const userId = access.restaurantId;
 
     const item = await menuStore.updateItem(id, userId, {
       name: body.name,

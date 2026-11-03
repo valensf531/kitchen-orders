@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { Settings, MapPin, Plus, Edit3, Trash2, X, Loader2, Check, DollarSign, Sparkles, Star, ImagePlus, Users, KeyRound, QrCode, UtensilsCrossed, Tags, Printer, Download, Dices, Copy, Eye, EyeOff } from 'lucide-react';
+import { Settings, MapPin, Plus, Edit3, Trash2, X, Loader2, Check, DollarSign, Sparkles, Star, ImagePlus, Users, KeyRound, QrCode, UtensilsCrossed, Tags, Printer, Download, Dices, Copy, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Zone } from '@/types/table';
 import { TableCardPreview } from './TableCardPreview';
 import {
@@ -122,10 +122,17 @@ export function SettingsPage() {
   const [customTags, setCustomTags] = useState<CustomTag[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingZones, setLoadingZones] = useState(true);
+  const [zonesLoadError, setZonesLoadError] = useState('');
+  const [menuLoadError, setMenuLoadError] = useState('');
   const [submittingZone, setSubmittingZone] = useState(false);
   const [submittingCategory, setSubmittingCategory] = useState(false);
   const [submittingItem, setSubmittingItem] = useState(false);
   const [submittingTag, setSubmittingTag] = useState(false);
+  const [zoneError, setZoneError] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+  const [itemError, setItemError] = useState('');
+  /* Aviso visible para acciones fuera de modales (borrados, toggle). */
+  const [actionNotice, setActionNotice] = useState('');
   const [editingZone, setEditingZone] = useState<Zone | null>(null);
   const [editingCategory, setEditingCategory] = useState<MenuCategory | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
@@ -503,14 +510,17 @@ export function SettingsPage() {
 
   const loadZones = async () => {
     setLoadingZones(true);
+    setZonesLoadError('');
     try {
       const res = await fetch('/api/zones');
       if (res.ok) {
         const data = await res.json();
         setZones(data.zones || []);
+      } else {
+        setZonesLoadError('No se pudieron cargar las zonas.');
       }
-    } catch (error) {
-      console.error('Failed to load zones:', error);
+    } catch {
+      setZonesLoadError('Error de red al cargar las zonas.');
     } finally {
       setLoadingZones(false);
     }
@@ -518,6 +528,7 @@ export function SettingsPage() {
 
   const loadMenuData = async () => {
     setLoading(true);
+    setMenuLoadError('');
     try {
       const res = await fetch('/api/menu');
       if (res.ok) {
@@ -532,9 +543,11 @@ export function SettingsPage() {
         if (data.categories?.length > 0) {
           setNewItemCategory(data.categories[0].id);
         }
+      } else {
+        setMenuLoadError('No se pudo cargar el menú.');
       }
-    } catch (error) {
-      console.error('Failed to load menu data:', error);
+    } catch {
+      setMenuLoadError('Error de red al cargar el menú.');
     } finally {
       setLoading(false);
     }
@@ -543,7 +556,15 @@ export function SettingsPage() {
   const handleSaveZone = async () => {
     if (!newZoneName.trim() || submittingZone) return;
     setSubmittingZone(true);
+    setZoneError('');
 
+    const readError = async (res: Response, fallback: string) => {
+      if (res.status === 409) return 'Ya existe una zona con un nombre similar.';
+      const data = await res.json().catch(() => null);
+      return (data?.error as string | undefined) ?? fallback;
+    };
+
+    let saved = false;
     try {
       if (editingZone) {
         const res = await fetch(`/api/zones/${editingZone.id}`, {
@@ -557,6 +578,9 @@ export function SettingsPage() {
           /* Renombrar puede cambiar el slug: las mesas migran en el
              backend, así que se refrescan para no mostrar datos viejos. */
           void fetchTables();
+          saved = true;
+        } else {
+          setZoneError(await readError(res, 'No se pudo guardar la zona.'));
         }
       } else {
         const res = await fetch('/api/zones', {
@@ -567,17 +591,23 @@ export function SettingsPage() {
         if (res.ok) {
           const data = await res.json();
           setZones(prev => [...prev, data.zone]);
+          saved = true;
+        } else {
+          setZoneError(await readError(res, 'No se pudo crear la zona.'));
         }
       }
-    } catch (error) {
-      console.error('Failed to save zone:', error);
+    } catch {
+      setZoneError('Error de red. Revisá tu conexión e intentá de nuevo.');
     } finally {
       setSubmittingZone(false);
     }
 
+    if (!saved) return;
+
     setShowZoneModal(false);
     setEditingZone(null);
     setNewZoneName('');
+    setZoneError('');
   };
 
   const handleDeleteZone = async (id: string) => {
@@ -588,6 +618,7 @@ export function SettingsPage() {
         ? `¿Eliminar la zona "${zone?.name}"? También se eliminarán sus ${mesaCount} mesa(s).`
         : `¿Estás seguro de eliminar esta zona?`;
     if (confirm(warning)) {
+      setActionNotice('');
       try {
         const res = await fetch(`/api/zones/${id}`, { method: 'DELETE' });
         if (res.ok) {
@@ -598,9 +629,11 @@ export function SettingsPage() {
           if (removedSlugs.length > 0 || typeof data?.tablesDeleted === 'number') {
             setTables(prev => prev.filter(t => !removedSlugs.includes(t.zone)));
           }
+        } else {
+          setActionNotice('No se pudo eliminar la zona. Intentá de nuevo.');
         }
-      } catch (error) {
-        console.error('Failed to delete zone:', error);
+      } catch {
+        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
       }
     }
   };
@@ -608,7 +641,9 @@ export function SettingsPage() {
   const handleSaveCategory = async () => {
     if (!newCategoryName.trim() || submittingCategory) return;
     setSubmittingCategory(true);
+    setCategoryError('');
 
+    let saved = false;
     try {
       if (editingCategory) {
         const res = await fetch(`/api/menu/categories/${editingCategory.id}`, {
@@ -619,6 +654,10 @@ export function SettingsPage() {
         if (res.ok) {
           const data = await res.json();
           setCategories(prev => prev.map(c => c.id === editingCategory.id ? data.category : c));
+          saved = true;
+        } else {
+          const data = await res.json().catch(() => null);
+          setCategoryError((data?.error as string | undefined) ?? 'No se pudo guardar la categoría.');
         }
       } else {
         const res = await fetch('/api/menu/categories', {
@@ -632,30 +671,40 @@ export function SettingsPage() {
           if (categories.length === 0) {
             setNewItemCategory(data.category.id);
           }
+          saved = true;
+        } else {
+          const data = await res.json().catch(() => null);
+          setCategoryError((data?.error as string | undefined) ?? 'No se pudo crear la categoría.');
         }
       }
-    } catch (error) {
-      console.error('Failed to save category:', error);
+    } catch {
+      setCategoryError('Error de red. Revisá tu conexión e intentá de nuevo.');
     } finally {
       setSubmittingCategory(false);
     }
+
+    if (!saved) return;
 
     setShowCategoryModal(false);
     setEditingCategory(null);
     setNewCategoryName('');
     setNewCategoryKind('food');
+    setCategoryError('');
   };
 
   const handleDeleteCategory = async (id: string) => {
     if (confirm('¿Estás seguro de eliminar esta categoría? Se eliminarán todos los items asociados.')) {
+      setActionNotice('');
       try {
         const res = await fetch(`/api/menu/categories/${id}`, { method: 'DELETE' });
         if (res.ok) {
           setCategories(prev => prev.filter(c => c.id !== id));
           setMenuItems(prev => prev.filter(i => i.categoryId !== id));
+        } else {
+          setActionNotice('No se pudo eliminar la categoría. Intentá de nuevo.');
         }
-      } catch (error) {
-        console.error('Failed to delete category:', error);
+      } catch {
+        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
       }
     }
   };
@@ -682,6 +731,7 @@ export function SettingsPage() {
   const handleSaveItem = async () => {
     if (!newItemName.trim() || newItemPrice <= 0 || !newItemCategory || submittingItem) return;
     setSubmittingItem(true);
+    setItemError('');
 
     const payload = {
       name: newItemName,
@@ -694,6 +744,21 @@ export function SettingsPage() {
       featured: newItemFeatured,
     };
 
+    const resetItemForm = () => {
+      setShowItemModal(false);
+      setEditingItem(null);
+      setNewItemName('');
+      setNewItemPrice(0);
+      setNewItemCategory(categories[0]?.id || '');
+      setNewItemImageUrl('');
+      setNewItemDescription('');
+      setNewItemIngredients('');
+      setNewItemTags([]);
+      setNewItemFeatured(false);
+      setImageError('');
+      setItemError('');
+    };
+
     try {
       if (editingItem) {
         const res = await fetch(`/api/menu/items/${editingItem.id}`, {
@@ -704,6 +769,10 @@ export function SettingsPage() {
         if (res.ok) {
           const data = await res.json();
           setMenuItems(prev => prev.map(i => i.id === editingItem.id ? data.item : i));
+          resetItemForm();
+        } else {
+          const data = await res.json().catch(() => null);
+          setItemError((data?.error as string | undefined) ?? 'No se pudo guardar el plato.');
         }
       } else {
         const res = await fetch('/api/menu/items', {
@@ -714,36 +783,31 @@ export function SettingsPage() {
         if (res.ok) {
           const data = await res.json();
           setMenuItems(prev => [...prev, data.item]);
+          resetItemForm();
+        } else {
+          const data = await res.json().catch(() => null);
+          setItemError((data?.error as string | undefined) ?? 'No se pudo crear el plato.');
         }
       }
-    } catch (error) {
-      console.error('Failed to save item:', error);
+    } catch {
+      setItemError('Error de red. Revisá tu conexión e intentá de nuevo.');
     } finally {
       setSubmittingItem(false);
     }
-
-    setShowItemModal(false);
-    setEditingItem(null);
-    setNewItemName('');
-    setNewItemPrice(0);
-    setNewItemCategory(categories[0]?.id || '');
-    setNewItemImageUrl('');
-    setNewItemDescription('');
-    setNewItemIngredients('');
-    setNewItemTags([]);
-    setNewItemFeatured(false);
-    setImageError('');
   };
 
   const handleDeleteItem = async (id: string) => {
     if (confirm('¿Estás seguro de eliminar este item?')) {
+      setActionNotice('');
       try {
         const res = await fetch(`/api/menu/items/${id}`, { method: 'DELETE' });
         if (res.ok) {
           setMenuItems(prev => prev.filter(i => i.id !== id));
+        } else {
+          setActionNotice('No se pudo eliminar el plato. Intentá de nuevo.');
         }
-      } catch (error) {
-        console.error('Failed to delete item:', error);
+      } catch {
+        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
       }
     }
   };
@@ -767,6 +831,7 @@ export function SettingsPage() {
   };
 
   const handleToggleItemAvailability = async (id: string, available: boolean) => {
+    setActionNotice('');
     try {
       const res = await fetch(`/api/menu/items/${id}`, {
         method: 'PUT',
@@ -775,9 +840,11 @@ export function SettingsPage() {
       });
       if (res.ok) {
         setMenuItems(prev => prev.map(i => i.id === id ? { ...i, available: !available } : i));
+      } else {
+        setActionNotice('No se pudo cambiar la disponibilidad. Intentá de nuevo.');
       }
-    } catch (error) {
-      console.error('Failed to toggle item availability:', error);
+    } catch {
+      setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
     }
   };
 
@@ -840,14 +907,17 @@ export function SettingsPage() {
 
   const handleDeleteTag = async (id: string) => {
     if (confirm('¿Estás seguro de eliminar esta etiqueta? Se quitará de todos los platos que la usan.')) {
+      setActionNotice('');
       try {
         const res = await fetch(`/api/menu/tags/${id}`, { method: 'DELETE' });
         if (res.ok) {
           setCustomTags(prev => prev.filter(t => t.id !== id));
           setMenuItems(prev => prev.map(i => ({ ...i, tags: i.tags.filter(tag => tag !== id) })));
+        } else {
+          setActionNotice('No se pudo eliminar la etiqueta. Intentá de nuevo.');
         }
-      } catch (error) {
-        console.error('Failed to delete tag:', error);
+      } catch {
+        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
       }
     }
   };
@@ -957,7 +1027,7 @@ export function SettingsPage() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => { setActiveTab(tab.id); setActionNotice(''); }}
                 title={tab.hint}
                 className={`flex-1 min-w-[104px] flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150 ${
                   isActive ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:bg-slate-100'
@@ -984,6 +1054,21 @@ export function SettingsPage() {
           </p>
         )}
 
+        {actionNotice && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <p className="flex-1">{actionNotice}</p>
+            <button
+              type="button"
+              onClick={() => setActionNotice('')}
+              aria-label="Cerrar aviso"
+              className="p-1 hover:bg-rose-100 rounded-lg"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {activeTab === 'zones' && (
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <SectionHeader
@@ -991,7 +1076,7 @@ export function SettingsPage() {
               hint="Ej. Terraza, Adentro, Barra. Cada zona agrupa sus mesas."
               action={
               <button
-                onClick={() => { setEditingZone(null); setNewZoneName(''); setShowZoneModal(true); }}
+                onClick={() => { setEditingZone(null); setNewZoneName(''); setZoneError(''); setShowZoneModal(true); }}
                 className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-all duration-150"
               >
                 <Plus className="w-4 h-4" />
@@ -1003,6 +1088,18 @@ export function SettingsPage() {
             <div className="divide-y divide-slate-100">
               {loadingZones ? (
                 <div className="p-6 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
+              ) : zonesLoadError ? (
+                <div className="p-8 text-center">
+                  <p className="font-medium text-slate-700">No se pudieron cargar las zonas</p>
+                  <p className="text-sm text-slate-400 mt-1 mb-4">{zonesLoadError} Revisá tu conexión.</p>
+                  <button
+                    type="button"
+                    onClick={() => loadZones()}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium"
+                  >
+                    Reintentar
+                  </button>
+                </div>
               ) : zones.length === 0 ? (
                 <div className="p-8 text-center">
                   <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-3">
@@ -1024,7 +1121,7 @@ export function SettingsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => { setEditingZone(zone); setNewZoneName(zone.name); setShowZoneModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                      <button onClick={() => { setEditingZone(zone); setNewZoneName(zone.name); setZoneError(''); setShowZoneModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
                         <Edit3 className="w-4 h-4" />
                       </button>
                       <button onClick={() => handleDeleteZone(zone.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
@@ -1271,6 +1368,20 @@ export function SettingsPage() {
 
         {activeTab === 'menu' && (
           <div className="space-y-4">
+            {menuLoadError && (
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex flex-wrap items-center gap-3">
+                <p className="flex-1 text-sm text-rose-700 font-medium min-w-[200px]">
+                  {menuLoadError} Revisá tu conexión.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => loadMenuData()}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium"
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <SectionHeader
                 title={`Categorías${categories.length > 0 ? ` (${categories.length})` : ''}`}
@@ -1288,7 +1399,7 @@ export function SettingsPage() {
                     </button>
                   )}
                   <button
-                    onClick={() => { setEditingCategory(null); setNewCategoryName(''); setNewCategoryKind('food'); setShowCategoryModal(true); }}
+                    onClick={() => { setEditingCategory(null); setNewCategoryName(''); setNewCategoryKind('food'); setCategoryError(''); setShowCategoryModal(true); }}
                     className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-all duration-150"
                   >
                     <Plus className="w-4 h-4" />
@@ -1324,7 +1435,7 @@ export function SettingsPage() {
                             Bebidas
                           </span>
                         )}
-                        <button onClick={() => { setEditingCategory(category); setNewCategoryName(category.name); setNewCategoryKind(category.kind ?? 'food'); setShowCategoryModal(true); }} className="p-1 text-slate-400 hover:text-indigo-600">
+                        <button onClick={() => { setEditingCategory(category); setNewCategoryName(category.name); setNewCategoryKind(category.kind ?? 'food'); setCategoryError(''); setShowCategoryModal(true); }} className="p-1 text-slate-400 hover:text-indigo-600">
                           <Edit3 className="w-3 h-3" />
                         </button>
                         <button onClick={() => handleDeleteCategory(category.id)} className="p-1 text-slate-400 hover:text-rose-600">
@@ -1345,7 +1456,7 @@ export function SettingsPage() {
                 <button
                   onClick={() => {
                     if (categories.length === 0) { alert('Primero debes crear al menos una categoría'); return; }
-                     setEditingItem(null); setNewItemName(''); setNewItemPrice(0); setNewItemCategory(categories[0].id); setNewItemImageUrl(''); setNewItemDescription(''); setNewItemIngredients(''); setNewItemTags([]); setNewItemFeatured(false); setImageError(''); setShowItemModal(true);
+                     setEditingItem(null); setNewItemName(''); setNewItemPrice(0); setNewItemCategory(categories[0].id); setNewItemImageUrl(''); setNewItemDescription(''); setNewItemIngredients(''); setNewItemTags([]); setNewItemFeatured(false); setImageError(''); setItemError(''); setShowItemModal(true);
                   }}
                   className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-all duration-150"
                 >
@@ -1392,7 +1503,7 @@ export function SettingsPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                               <button onClick={() => { setEditingItem(item); setNewItemName(item.name); setNewItemPrice(item.price); setNewItemCategory(item.categoryId); setNewItemImageUrl(item.imageUrl ?? ''); setNewItemDescription(item.description ?? ''); setNewItemIngredients(item.ingredients ?? ''); setNewItemTags(item.tags); setNewItemFeatured(item.featured); setImageError(''); setShowItemModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                               <button onClick={() => { setEditingItem(item); setNewItemName(item.name); setNewItemPrice(item.price); setNewItemCategory(item.categoryId); setNewItemImageUrl(item.imageUrl ?? ''); setNewItemDescription(item.description ?? ''); setNewItemIngredients(item.ingredients ?? ''); setNewItemTags(item.tags); setNewItemFeatured(item.featured); setImageError(''); setItemError(''); setShowItemModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
                                 <Edit3 className="w-4 h-4" />
                               </button>
                               <button onClick={() => handleDeleteItem(item.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
@@ -1669,6 +1780,7 @@ export function SettingsPage() {
             <div className="p-4">
               <label className="block text-sm font-medium text-slate-600 mb-2">Nombre de la Zona</label>
               <input type="text" value={newZoneName} onChange={(e) => setNewZoneName(e.target.value)} placeholder="Ej: Terraza VIP" className="w-full px-3 py-2.5 border border-slate-200 rounded-lg" autoFocus />
+              {zoneError && <p className="text-sm text-rose-600 mt-2">{zoneError}</p>}
             </div>
             <div className="flex gap-3 p-4 bg-slate-50">
               <button onClick={() => setShowZoneModal(false)} className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-100">Cancelar</button>
@@ -1706,6 +1818,7 @@ export function SettingsPage() {
                 </span>
               </button>
               <p className="text-xs text-slate-400 -mt-2">Las bebidas aparecen con checkbox en Cocina (se entregan primero).</p>
+              {categoryError && <p className="text-sm text-rose-600">{categoryError}</p>}
             </div>
             <div className="flex gap-3 p-4 bg-slate-50">
               <button onClick={() => setShowCategoryModal(false)} className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-100">Cancelar</button>
@@ -1831,6 +1944,7 @@ export function SettingsPage() {
                 <Star className={`w-4 h-4 ${newItemFeatured ? 'fill-amber-400 text-amber-400' : ''}`} />
                 {newItemFeatured ? 'Destacado del chef' : 'Marcar como recomendado'}
               </button>
+              {itemError && <p className="text-sm text-rose-600">{itemError}</p>}
             </div>
             <div className="flex gap-3 p-4 bg-slate-50 sticky bottom-0">
               <button onClick={() => setShowItemModal(false)} className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-100">Cancelar</button>

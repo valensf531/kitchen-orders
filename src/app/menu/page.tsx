@@ -41,6 +41,7 @@ type Item = {
 type Category = { id: string; name: string; order: number };
 type CartItem = Item & { quantity: number; notes?: string };
 type PublicTable = { id: string; number: number; zone: string };
+type PublicZone = { slug: string; name: string };
 
 function TagBadge({ meta }: { meta: TagMeta }) {
   return (
@@ -77,19 +78,32 @@ function ShowcaseCard({
   badgeIcon,
   badgeLabel,
   note,
+  rank,
+  qty,
   onOpen,
   onAdd,
+  onInc,
+  onDec,
 }: {
   item: Item;
   badgeIcon: React.ReactNode;
   badgeLabel: string;
   note?: string;
+  rank?: number;
+  qty?: number;
   onOpen: () => void;
   onAdd: () => void;
+  onInc?: () => void;
+  onDec?: () => void;
 }) {
   return (
-    <article className="bg-white rounded-xl border border-slate-200 flex w-56 shrink-0 snap-start flex-col overflow-hidden transition-shadow hover:shadow-md sm:w-64">
-      <button onClick={onOpen} className="relative block h-32 w-full bg-slate-100" aria-label={`Ver detalle de ${item.name}`}>
+    <article className="relative bg-white rounded-2xl border border-slate-200/80 flex w-60 shrink-0 snap-start flex-col overflow-hidden transition-shadow hover:shadow-lg sm:w-68">
+      {typeof rank === 'number' && (
+        <span aria-hidden="true" className="pointer-events-none absolute -top-1 right-2 z-10 text-5xl font-black text-slate-900/10 select-none">
+          {rank}
+        </span>
+      )}
+      <button onClick={onOpen} className="relative block h-36 w-full bg-gradient-to-br from-amber-50 to-slate-100" aria-label={`Ver detalle de ${item.name}`}>
         {item.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- foto de usuario (data:/externa//api) servida por separado; next/image no optimiza ni abarata aquí.
           <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
@@ -98,27 +112,62 @@ function ShowcaseCard({
             <ImageIcon className="h-8 w-8 text-slate-300" aria-hidden="true" />
           </span>
         )}
-        <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-md">
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-slate-950/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-md backdrop-blur">
           {badgeIcon}
           {badgeLabel}
         </span>
       </button>
-      <div className="flex flex-1 flex-col gap-2 p-3.5">
+      <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-2">
-          <span className="break-words line-clamp-2 font-semibold leading-snug text-slate-800" title={item.name}>{item.name}</span>
-          <span className="whitespace-nowrap font-semibold text-indigo-600">${item.price.toFixed(2)}</span>
+          <span className="break-words line-clamp-2 font-bold leading-snug text-slate-800" title={item.name}>{item.name}</span>
+          <span className="whitespace-nowrap rounded-full bg-teal-50 px-2 py-0.5 font-bold text-teal-700">${item.price.toFixed(2)}</span>
         </div>
-        {item.description && <p className="line-clamp-2 text-xs text-slate-500">{item.description}</p>}
-        {note && <p className="text-[11px] font-medium text-slate-400">{note}</p>}
-        <button
-          onClick={onAdd}
-          className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white transition-all duration-150 hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Agregar
-        </button>
+        {note && <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-500"><Flame className="h-3 w-3" aria-hidden="true" />{note}</p>}
+        {(qty ?? 0) > 0 ? (
+          <div className="mt-auto flex items-center justify-between rounded-xl bg-slate-950 px-2 py-1.5">
+            <button
+              onClick={onDec}
+              aria-label={`Quitar una unidad de ${item.name}`}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white transition-colors hover:bg-white/20"
+            >
+              <Minus className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <span className="font-bold text-white" aria-live="polite">{qty}</span>
+            <button
+              onClick={onInc ?? onAdd}
+              aria-label={`Agregar una unidad de ${item.name}`}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500 text-white transition-colors hover:bg-teal-400"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onAdd}
+            className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-bold text-white transition-all duration-150 hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 active:scale-[0.98]"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Agregar
+          </button>
+        )}
       </div>
     </article>
+  );
+}
+
+function SectionTitle({ id, eyebrow, title, count, countLabel }: { id?: string; eyebrow: string; title: string; count?: number; countLabel?: string }) {
+  return (
+    <div className="mb-4 flex items-end justify-between gap-3">
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-600">{eyebrow}</p>
+        <h2 id={id} className="mt-0.5 text-xl font-black tracking-tight text-slate-900">{title}</h2>
+      </div>
+      {typeof count === 'number' && (
+        <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white">
+          {count} {countLabel ?? (count === 1 ? 'plato' : 'platos')}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -132,8 +181,8 @@ function PublicMenu() {
   const [items, setItems] = useState<Item[]>([]);
   const [customTags, setCustomTags] = useState<CustomTag[]>([]);
   const [branding, setBranding] = useState<{ name: string; logoUrl: string | null }>({ name: '', logoUrl: null });
-  const [popular, setPopular] = useState<{ id: string; count: number }[]>([]);
   const [availableTables, setAvailableTables] = useState<PublicTable[]>([]);
+  const [publicZones, setPublicZones] = useState<PublicZone[]>([]);
   const [loading, setLoading] = useState(true);
   const [table, setTable] = useState('');
   const [pickedTableId, setPickedTableId] = useState('');
@@ -161,10 +210,17 @@ function PublicMenu() {
   }, []);
 
   useEffect(() => {
+    /* Esperar a leer la URL: así se hace una sola carga, ya con el
+       restaurante correcto (si no, una respuesta vieja puede pisar la
+       lista de mesas y el menú vuelve a pedir la mesa). */
+    if (!paramsReady) return;
     let active = true;
     const query = restaurantFromUrl ? `?restaurant=${encodeURIComponent(restaurantFromUrl)}` : '';
     fetch(`/api/public/menu${query}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error('menu');
+        return res.json();
+      })
       .then((data) => {
         if (!active) return;
         setRestaurant(data.restaurantId ?? '');
@@ -173,9 +229,9 @@ function PublicMenu() {
           logoUrl: typeof data.branding?.logoUrl === 'string' ? data.branding.logoUrl : null,
         });
         setAvailableTables(data.tables ?? []);
+        setPublicZones(Array.isArray(data.zones) ? data.zones : []);
         setCategories(data.categories ?? []);
         setCustomTags(Array.isArray(data.tags) ? data.tags : []);
-        setPopular(Array.isArray(data.popularItems) ? data.popularItems : []);
         setItems(
           (data.items ?? []).map((item: Item) => ({
             ...item,
@@ -190,7 +246,7 @@ function PublicMenu() {
     return () => {
       active = false;
     };
-  }, [restaurantFromUrl]);
+  }, [paramsReady, restaurantFromUrl]);
 
   const tableMatches = useMemo(
     () => availableTables.filter((t) => t.number === Number(table)),
@@ -200,7 +256,13 @@ function PublicMenu() {
     tableMatches.length === 1 ? tableMatches[0] : tableMatches.find((t) => t.id === pickedTableId);
   const tableId = resolvedTable?.id ?? '';
   const zone = resolvedTable?.zone ?? '';
-  const tableModalOpen = !tableLocked && (reopenRequested || !paramsReady || !table);
+  /* Si la mesa ya está resuelta (número + id) no se vuelve a pedir: el
+     modal solo aparece si falta la mesa, si la del QR no existe (o se
+     borró) o si el usuario pidió cambiarla. */
+  const tableModalOpen = !loading && (reopenRequested || !table || !tableId);
+  const zoneNameOf = (slug: string) =>
+    publicZones.find((z) => z.slug === slug)?.name ?? slug.replace(/_/g, ' ');
+  const tableTyped = table.trim().length > 0;
 
   const searching = search.trim().length > 0;
   const query = search.trim().toLowerCase();
@@ -231,22 +293,12 @@ function PublicMenu() {
 
   const featuredItems = useMemo(() => items.filter((item) => item.featured), [items]);
 
-  const popularList = useMemo(
-    () =>
-      popular
-        .map((entry) => {
-          const item = items.find((candidate) => candidate.id === entry.id);
-          return item ? { item, count: entry.count } : null;
-        })
-        .filter((entry): entry is { item: Item; count: number } => entry !== null),
-    [popular, items],
-  );
-
   const total = useMemo(
     () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [cart],
   );
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
+  const cartQty = (id: string) => cart.find((x) => x.id === id)?.quantity ?? 0;
 
   const addToCart = (item: Item, quantity = 1, notes?: string) =>
     setCart((current) => {
@@ -348,63 +400,65 @@ function PublicMenu() {
   }
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-slate-50 text-slate-800 pb-72 sm:pb-32">
+    <main className="min-h-dvh overflow-x-hidden bg-canvas text-slate-800 pb-72 sm:pb-32">
       {/* Encabezado con marca + mesa */}
       <header className="bg-white border-b border-slate-200">
-        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-5 sm:py-5">
-          <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
-            <div className="flex items-center gap-3">
+        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+            <div className="flex items-center gap-3 min-w-0">
               {branding.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- logo del restaurante (data URL); next/image no aplica.
                 <img
                   src={branding.logoUrl}
                   alt={branding.name || 'Logo del restaurante'}
-                  className="w-11 h-11 rounded-xl object-contain bg-white border border-slate-200"
+                  className="h-12 w-12 rounded-xl object-contain bg-white border border-slate-200"
                 />
               ) : (
               <Image
                 src="/logo.png"
                 alt="Lumen Logo"
-                width={44}
-                height={44}
-                className="w-11 h-11 rounded-xl"
+                width={48}
+                height={48}
+                className="h-12 w-12 rounded-xl border border-slate-200"
                 priority
               />
               )}
-              <div>
-                <h1 className="text-lg font-bold text-slate-800 tracking-tight">{branding.name || 'Lumen'}</h1>
-                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-medium">Menú digital</p>
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-bold tracking-tight text-slate-900">{branding.name || 'Lumen'}</h1>
+                <p className="text-xs text-slate-500">
+                  Menú digital{!loading && items.length > 0 && ` · ${items.length} ${items.length === 1 ? 'plato' : 'platos'}`}
+                </p>
               </div>
             </div>
 
-            <div className="ml-auto min-w-0">
-              <label htmlFor="table" className="block text-sm font-semibold text-slate-600 mb-2">
-                Mesa
-              </label>
-              <div className="flex items-center gap-2">
+            <div className="ml-auto flex items-end gap-2">
+              <div>
+                <label htmlFor="table" className="block text-xs font-semibold text-slate-500 mb-1.5">
+                  Mesa
+                </label>
                 <input
                   id="table"
                   disabled={tableLocked}
                   value={table}
                   onChange={(e) => setTable(e.target.value.replace(/\D/g, ''))}
                   inputMode="numeric"
-                  placeholder="Ej. 4"
-                  className={`w-28 px-3 py-2.5 border rounded-lg text-slate-800 placeholder:text-slate-400 font-bold ${
+                  placeholder="N°"
+                  className={`w-20 px-3 py-2 border rounded-lg text-slate-900 placeholder:text-slate-400 font-bold text-center ${
                     tableLocked
                       ? 'border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed'
-                      : 'border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-600/30 focus:border-teal-600'
+                      : 'border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900'
                   }`}
                 />
-                {tableLocked && (
-                  <button
-                    onClick={() => setReopenRequested(true)}
-                    className="inline-flex items-center gap-2 px-3 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-all duration-150 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden="true" />
-                    Cambiar
-                  </button>
-                )}
               </div>
+              {tableLocked && (
+                <button
+                  onClick={() => setReopenRequested(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+                >
+                  <Pencil className="h-4 w-4" aria-hidden="true" />
+                  Cambiar
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -419,36 +473,48 @@ function PublicMenu() {
         )}
       </div>
 
-      {/* Búsqueda + filtros + categorías */}
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
+      {/* Buscador + mesa + categorías (fijo al scrollear) */}
+      <div className="sticky top-0 z-10 border-b border-line bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
         <div className="mx-auto max-w-5xl space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              type="search"
-              aria-label="Buscar en el menú"
-              placeholder="Buscar platos, bebidas…"
-              className="w-full pl-10 pr-10 py-2.5 border border-slate-200 rounded-lg bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600/30 focus:border-teal-600"
-            />
-            {search && (
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                type="search"
+                aria-label="Buscar en el menú"
+                placeholder="Buscar platos, bebidas…"
+                className="w-full pl-11 pr-10 py-3 border border-slate-200 rounded-full bg-slate-50 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 focus:bg-white"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  aria-label="Limpiar búsqueda"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            {tableLocked && tableId && (
               <button
-                onClick={() => setSearch('')}
-                aria-label="Limpiar búsqueda"
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                type="button"
+                onClick={() => setReopenRequested(true)}
+                title="Cambiar de mesa"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white border border-slate-300 px-3.5 py-3 text-xs font-bold text-slate-800 shadow-sm transition-transform active:scale-95"
               >
-                <X className="h-4 w-4" aria-hidden="true" />
+                Mesa {table}
               </button>
             )}
           </div>
 
-          <nav className="scrollbar-hide -mx-1 flex gap-2 overflow-x-auto px-1" aria-label="Categorías del menú">
+          <nav className="scrollbar-hide -mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5" aria-label="Categorías del menú">
             {categories.map((category) => (
               <a
                 key={category.id}
                 href={`#categoria-${category.id}`}
-                className="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150 bg-slate-100 text-slate-600 hover:bg-slate-200"
+                className="px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-150 bg-slate-100 text-slate-600 hover:bg-slate-200"
               >
                 {category.name}
               </a>
@@ -457,50 +523,23 @@ function PublicMenu() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-5xl px-4 pt-5 sm:px-5 sm:pt-6">
-        {/* Los más pedidos (carrusel principal) */}
-        {!loading && !searching && popularList.length > 0 && (
-          <section aria-labelledby="popular-title" className="mb-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-lg bg-rose-500 flex items-center justify-center">
-                <Flame className="w-4 h-4 text-white" aria-hidden="true" />
-              </div>
-              <h2 id="popular-title" className="text-base font-bold text-slate-800">Los más pedidos</h2>
-            </div>
-            <div className="scrollbar-hide -mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-1">
-              {popularList.map(({ item, count }) => (
-                <ShowcaseCard
-                  key={item.id}
-                  item={item}
-                  badgeIcon={<Flame className="h-3 w-3" aria-hidden="true" />}
-                  badgeLabel="Top pedido"
-                  note={`Se pidió ${count} ${count === 1 ? 'vez' : 'veces'}`}
-                  onOpen={() => openDetail(item)}
-                  onAdd={() => addToCart(item)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
+      <div className="mx-auto max-w-5xl px-4 pt-6 sm:px-5 sm:pt-8">
         {/* Recomendados del chef */}
         {!loading && !searching && featuredItems.length > 0 && (
-          <section aria-labelledby="featured-title" className="mb-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-lg bg-amber-500 flex items-center justify-center">
-                <Star className="w-4 h-4 text-white" aria-hidden="true" />
-              </div>
-              <h2 id="featured-title" className="text-base font-bold text-slate-800">Recomendados del chef</h2>
-            </div>
-            <div className="scrollbar-hide -mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-1">
+          <section aria-labelledby="featured-title" className="mb-10">
+            <SectionTitle id="featured-title" eyebrow="Selección de la casa" title="Recomendados del chef" />
+            <div className="scrollbar-hide flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
               {featuredItems.map((item) => (
                 <ShowcaseCard
                   key={item.id}
                   item={item}
                   badgeIcon={<Star className="h-3 w-3" aria-hidden="true" />}
                   badgeLabel="Recomendado"
+                  qty={cartQty(item.id)}
                   onOpen={() => openDetail(item)}
                   onAdd={() => addToCart(item)}
+                  onInc={() => change(item.id, 1)}
+                  onDec={() => change(item.id, -1)}
                 />
               ))}
             </div>
@@ -519,22 +558,23 @@ function PublicMenu() {
                 key={category.id}
                 id={`categoria-${category.id}`}
                 aria-labelledby={`categoria-title-${category.id}`}
-                className="mb-8 scroll-mt-40"
+                className="mb-10 scroll-mt-40"
               >
-                <div className="mb-3 flex items-center gap-2.5">
-                  <h2 id={`categoria-title-${category.id}`} className="text-base font-bold text-slate-800">
-                    {category.name}
-                  </h2>
-                  <span className="text-xs font-semibold text-slate-400">
-                    {sectionItems.length} {sectionItems.length === 1 ? 'producto' : 'productos'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
-                  {sectionItems.map((item) => (
-              <article key={item.id} className="bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden transition-shadow hover:shadow-md">
+                <SectionTitle
+                  id={`categoria-title-${category.id}`}
+                  eyebrow="Categoría"
+                  title={category.name}
+                  count={sectionItems.length}
+                  countLabel={sectionItems.length === 1 ? 'producto' : 'productos'}
+                />
+                <div className="grid grid-cols-1 gap-4 sm:gap-4 lg:grid-cols-3">
+                  {sectionItems.map((item) => {
+                    const qty = cartQty(item.id);
+                    return (
+              <article key={item.id} className="bg-white rounded-2xl border border-slate-200/80 flex flex-col overflow-hidden transition-shadow hover:shadow-lg">
                 <button
                   onClick={() => openDetail(item)}
-                  className="relative block h-36 w-full bg-slate-100 sm:h-40"
+                  className="relative block h-44 w-full bg-gradient-to-br from-amber-50 to-slate-100 sm:h-44"
                   aria-label={`Ver detalle de ${item.name}`}
                 >
                   {item.imageUrl ? (
@@ -557,35 +597,57 @@ function PublicMenu() {
                       Recomendado
                     </span>
                   )}
+                  <span className="absolute bottom-3 right-3 rounded-full bg-white/95 px-3 py-1 font-bold text-slate-900 shadow-md backdrop-blur">
+                    ${item.price.toFixed(2)}
+                  </span>
                 </button>
                 <div className="flex flex-1 flex-col gap-2 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <h3 className="break-words line-clamp-2 font-semibold leading-snug text-slate-800" title={item.name}>{item.name}</h3>
-                    <span className="whitespace-nowrap font-semibold text-indigo-600">${item.price.toFixed(2)}</span>
-                  </div>
+                  <h3 className="break-words line-clamp-2 font-bold leading-snug text-slate-800" title={item.name}>{item.name}</h3>
                   {item.description && (
                     <p className="line-clamp-2 text-xs text-slate-500">{item.description}</p>
                   )}
                   <TagList tags={item.tags} limit={3} customTags={customTags} />
-                  <div className="mt-auto flex items-center justify-between pt-1">
+                  <div className="mt-auto flex items-center gap-2 pt-2">
                     <button
                       onClick={() => openDetail(item)}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                      className="inline-flex items-center gap-1 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
                     >
                       <Info className="h-3.5 w-3.5" aria-hidden="true" />
                       Detalle
                     </button>
-                    <button
-                      onClick={() => addToCart(item)}
-                      aria-label={`Agregar ${item.name} al pedido`}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-teal-600 text-white transition-all duration-150 hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 active:scale-95"
-                    >
-                      <Plus className="h-5 w-5" aria-hidden="true" />
-                    </button>
+                    {qty > 0 ? (
+                      <div className="ml-auto flex items-center gap-1 rounded-xl bg-slate-950 p-1">
+                        <button
+                          onClick={() => change(item.id, -1)}
+                          aria-label={`Quitar una unidad de ${item.name}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white transition-colors hover:bg-white/20"
+                        >
+                          <Minus className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <span className="w-7 text-center font-bold text-white" aria-live="polite">{qty}</span>
+                        <button
+                          onClick={() => change(item.id, 1)}
+                          aria-label={`Agregar una unidad de ${item.name}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500 text-white transition-colors hover:bg-teal-400"
+                        >
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => addToCart(item)}
+                        aria-label={`Agregar ${item.name} al pedido`}
+                        className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white transition-all duration-150 hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 active:scale-95"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                        Agregar
+                      </button>
+                    )}
                   </div>
                 </div>
               </article>
-                ))}
+                    );
+                  })}
                 </div>
               </section>
             ))}
@@ -602,49 +664,49 @@ function PublicMenu() {
       </div>
 
       {cart.length > 0 && (
-        <section className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white p-3 shadow-lg sm:p-4">
-          <div className="mx-auto max-w-5xl">
+        <section className="fixed inset-x-0 bottom-0 z-20 px-3 pb-3 sm:px-5 sm:pb-5">
+          <div className="mx-auto max-w-5xl rounded-2xl bg-slate-950 p-4 text-white shadow-2xl sm:p-5">
             <div className="flex flex-col gap-3">
               <div className="min-w-0" aria-live="polite">
-                <p className="flex items-center gap-2 font-bold text-slate-800">
+                <p className="flex items-center gap-2 font-bold">
                   Tu pedido
-                  <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-700">
+                  <span className="inline-flex items-center rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
                     {cartCount} {cartCount === 1 ? 'item' : 'items'}
                   </span>
-                  <span className="ml-auto text-lg font-bold text-indigo-600">${total.toFixed(2)}</span>
+                  <span className="ml-auto text-xl font-black">${total.toFixed(2)}</span>
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {cart.map((item) => (
                     <span
                       key={item.id}
-                      className="inline-flex max-w-full items-center gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs sm:text-sm"
+                      className="inline-flex max-w-full items-center gap-2 bg-white/10 rounded-xl px-2.5 py-1.5 text-xs sm:text-sm"
                     >
                       <button
                         onClick={() => change(item.id, -1)}
                         aria-label={`Quitar una unidad de ${item.name}`}
-                        className="w-6 h-6 flex items-center justify-center bg-slate-200 hover:bg-slate-300 rounded transition-colors text-slate-600"
+                        className="w-6 h-6 flex items-center justify-center bg-white/15 hover:bg-white/25 rounded transition-colors text-white"
                       >
                         <Minus className="h-3 w-3" aria-hidden="true" />
                       </button>
-                      <span className="truncate font-medium text-slate-700">
+                      <span className="truncate font-medium text-white">
                         {item.quantity}× {item.name}
                       </span>
                       {item.notes && (
-                        <span title={item.notes} className="text-slate-400">
+                        <span title={item.notes} className="text-white/50">
                           <StickyNote className="h-3 w-3" aria-label={`Notas: ${item.notes}`} />
                         </span>
                       )}
                       <button
                         onClick={() => change(item.id, 1)}
                         aria-label={`Agregar una unidad de ${item.name}`}
-                        className="w-6 h-6 flex items-center justify-center bg-teal-600 hover:bg-teal-700 rounded transition-colors text-white"
+                        className="w-6 h-6 flex items-center justify-center bg-teal-500 hover:bg-teal-400 rounded transition-colors text-white"
                       >
                         <Plus className="h-3 w-3" aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => removeFromCart(item.id)}
                         aria-label={`Eliminar ${item.name} del pedido`}
-                        className="w-6 h-6 flex items-center justify-center bg-rose-100 hover:bg-rose-200 rounded transition-colors text-rose-500"
+                        className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-rose-500/40 rounded transition-colors text-white/70 hover:text-white"
                       >
                         <Trash2 className="h-3 w-3" aria-hidden="true" />
                       </button>
@@ -659,12 +721,12 @@ function PublicMenu() {
                   onChange={(e) => setNotes(e.target.value)}
                   aria-label="Notas especiales para la cocina"
                   placeholder="Notas generales (opcional)"
-                  className="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600/30 focus:border-teal-600"
+                  className="flex-1 px-3 py-2.5 border border-white/15 rounded-xl text-sm bg-white/10 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400"
                 />
                 <button
                   onClick={submit}
                   disabled={submitting}
-                  className="sm:w-auto px-6 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white rounded-lg font-semibold text-sm transition-all duration-150 flex items-center justify-center gap-2"
+                  className="sm:w-auto px-6 py-3 bg-teal-500 hover:bg-teal-400 disabled:bg-white/15 disabled:text-white/50 text-white rounded-xl font-bold text-sm transition-all duration-150 flex items-center justify-center gap-2 active:scale-[0.98]"
                 >
                   {submitting ? (
                     <>
@@ -674,7 +736,7 @@ function PublicMenu() {
                   ) : (
                     <>
                       <Send className="h-4 w-4" aria-hidden="true" />
-                      Enviar pedido
+                      Enviar pedido · ${total.toFixed(2)}
                     </>
                   )}
                 </button>
@@ -835,6 +897,15 @@ function PublicMenu() {
               className="mt-6 w-full px-3 py-2.5 border border-slate-200 rounded-lg text-center text-lg font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600/30 focus:border-teal-600"
             />
 
+            {loading && tableTyped && (
+              <p className="text-sm text-slate-400 mt-2">Buscando tu mesa…</p>
+            )}
+            {!loading && tableTyped && tableMatches.length === 0 && (
+              <p role="alert" className="text-sm text-rose-600 font-medium mt-2">
+                La mesa {table} no existe. Revisá el número.
+              </p>
+            )}
+
             {tableMatches.length > 1 && (
               <>
                 <label htmlFor="zone-select" className="sr-only">
@@ -849,7 +920,7 @@ function PublicMenu() {
                   <option value="">Seleccioná el salón</option>
                   {tableMatches.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.zone}
+                      {zoneNameOf(t.zone)}
                     </option>
                   ))}
                 </select>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { zoneStore, toZoneSlug } from '@/lib/zone-store';
 import { requireAccess, requireAdmin } from '@/lib/access';
+import { revalidatePublicMenu } from '@/lib/menu-cache';
 
 export async function GET() {
   try {
@@ -39,6 +40,8 @@ export async function POST(request: NextRequest) {
       name: body.name,
       slug,
     });
+
+    revalidatePublicMenu(userId);
 
     return NextResponse.json({ zone }, { status: 201 });
   } catch (error) {

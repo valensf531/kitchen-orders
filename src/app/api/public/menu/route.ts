@@ -3,6 +3,8 @@ import { unstable_cache } from 'next/cache';
 import { menuStore } from '@/lib/menu-store';
 import { brandingStore } from '@/lib/branding-store';
 import { tableStore } from '@/lib/table-store';
+import { zoneStore } from '@/lib/zone-store';
+import { resolvePublicTable } from '@/lib/public-table';
 import { orderStore } from '@/lib/store';
 import { resolveOrderItems } from '@/lib/pricing';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -18,13 +20,14 @@ function restaurantId(request: NextRequest) {
 const loadPublicMenu = (userId: string) =>
   unstable_cache(
     async () => {
-      const [categories, items, tables, tags, itemCounts, branding] = await Promise.all([
+      const [categories, items, tables, tags, itemCounts, branding, zones] = await Promise.all([
         menuStore.getCategories(userId),
         menuStore.getItems(userId),
         tableStore.getAll(userId),
         menuStore.getTags(userId),
         orderStore.getItemCounts(userId),
         brandingStore.getByUserId(userId).catch(() => null),
+        zoneStore.getByUserId(userId).catch(() => []),
       ]);
 
       const availableItems = items
@@ -65,6 +68,7 @@ const loadPublicMenu = (userId: string) =>
           number: Number(table.number),
           zone: String(table.zone),
         })),
+        zones: zones.map((zone) => ({ slug: zone.slug, name: zone.name })),
       };
     },
     ['public-menu', userId],
@@ -127,11 +131,20 @@ export async function POST(request: NextRequest) {
 
     const tables = await tableStore.getAll(userId);
     const requestedZone = typeof body.zone === 'string' ? body.zone.trim() : '';
-    const matchingTables = tables.filter((item) => Number(item.number) === tableNumber);
-    const table = (body.tableId && tables.find((item) => item.id === body.tableId))
-      || (requestedZone ? matchingTables.find((item) => String(item.zone) === requestedZone) : matchingTables.length === 1 ? matchingTables[0] : undefined);
-    if (matchingTables.length > 1 && !table) return NextResponse.json({ error: 'Seleccioná el salón de la mesa' }, { status: 409 });
-    if (!table) return NextResponse.json({ error: 'La mesa no existe' }, { status: 400 });
+    /* La mesa debe existir y el id coincidir con el número (nada de ids
+       viejos con otro número): si no, 400/409 con mensaje claro. */
+    const resolvedTable = resolvePublicTable(tables, {
+      tableId: body.tableId,
+      tableNumber,
+      zone: requestedZone,
+    });
+    if (!resolvedTable.ok) {
+      return NextResponse.json({ error: resolvedTable.error }, { status: resolvedTable.status });
+    }
+    const table = tables.find((t) => t.id === resolvedTable.table.id);
+    if (!table) {
+      return NextResponse.json({ error: 'La mesa no existe' }, { status: 400 });
+    }
     if (table.status === 'available' || table.status === 'paid') {
       await orderStore.closeTableAccount(userId, table.number, table.zone);
     }

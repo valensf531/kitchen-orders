@@ -128,6 +128,7 @@ export function DiningRoom() {
   /* Marcar agotado / reponer directo desde la toma de pedidos. */
   const toggleStock = async (item: MenuItem, available: boolean) => {
     setStockToggling(item.id);
+    setErrorMessage('');
     try {
       const res = await fetch(`/api/menu/items/${item.id}`, {
         method: 'PUT',
@@ -140,9 +141,11 @@ export function DiningRoom() {
           /* Si estaba en el carrito, sale: ya no se puede pedir. */
           setCart(prev => prev.filter(entry => entry.menuItemId !== item.id));
         }
+      } else {
+        setErrorMessage('No se pudo cambiar el stock. Intentá de nuevo.');
       }
-    } catch (error) {
-      console.error('Failed to toggle stock:', error);
+    } catch {
+      setErrorMessage('Error de red. Revisá tu conexión e intentá de nuevo.');
     } finally {
       setStockToggling(null);
     }

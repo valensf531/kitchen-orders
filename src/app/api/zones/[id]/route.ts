@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { zoneStore, toZoneSlug } from '@/lib/zone-store';
 import { requireAdmin } from '@/lib/access';
+import { revalidatePublicMenu } from '@/lib/menu-cache';
 
 export async function PUT(
   request: NextRequest,
@@ -34,6 +35,8 @@ export async function PUT(
       return NextResponse.json({ error: 'Zone not found' }, { status: 404 });
     }
 
+    revalidatePublicMenu(userId);
+
     return NextResponse.json({ zone });
   } catch (error) {
     if (error instanceof Error && error.message.includes('Ya existe')) {
@@ -63,6 +66,8 @@ export async function DELETE(
     if (!result.deleted) {
       return NextResponse.json({ error: 'Zone not found' }, { status: 404 });
     }
+
+    revalidatePublicMenu(userId);
 
     return NextResponse.json({ success: true, tablesDeleted: result.tablesDeleted });
   } catch {

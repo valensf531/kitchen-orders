@@ -77,7 +77,11 @@ export async function POST(request: NextRequest) {
         ? await tableStore.getByZone(userId, body.zone)
         : await tableStore.getAll(userId);
       matchedTable = tables.find((item) => Number(item.number) === Number(body.tableNumber));
-      if (matchedTable && (matchedTable.status === 'available' || matchedTable.status === 'paid')) {
+      /* La mesa debe existir: nada de pedidos a mesas fantasmas. */
+      if (!matchedTable) {
+        return NextResponse.json({ error: 'La mesa no existe' }, { status: 400 });
+      }
+      if (matchedTable.status === 'available' || matchedTable.status === 'paid') {
         await orderStore.closeTableAccount(userId, matchedTable.number, matchedTable.zone);
       }
     }

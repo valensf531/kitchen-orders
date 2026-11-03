@@ -13,12 +13,9 @@ async function getHandlers() {
 }
 
 export async function GET(request: NextRequest) {
-  console.log('AUTH GET request:', request.nextUrl.pathname);
   try {
     const handlers = await getHandlers();
-    const response = await handlers.GET(request);
-    console.log('AUTH GET response status:', response.status);
-    return response;
+    return await handlers.GET(request);
   } catch (error) {
     console.error('AUTH GET error:', error);
     throw error;
@@ -26,12 +23,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  console.log('AUTH POST request:', request.nextUrl.pathname);
   try {
     const handlers = await getHandlers();
-    const response = await handlers.POST(request);
-    console.log('AUTH POST response status:', response.status);
-    return response;
+    return await handlers.POST(request);
   } catch (error) {
     console.error('AUTH POST error:', error);
     throw error;
