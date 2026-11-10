@@ -10,3 +10,9 @@ Dockerfile
 .dockerignore
 README.md
 ROADMAP.md
+
+e2e/seed.json
+test-results
+playwright-report
+backups
+.github

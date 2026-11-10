@@ -82,7 +82,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'La mesa no existe' }, { status: 400 });
       }
       if (matchedTable.status === 'available' || matchedTable.status === 'paid') {
-        await orderStore.closeTableAccount(userId, matchedTable.number, matchedTable.zone);
+        await orderStore.closeTableAccount(userId, matchedTable.number, matchedTable.zone, {
+          tableId: matchedTable.id,
+        });
       }
     }
 
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
           ? body.customerName.trim().slice(0, 100)
           : (access.name ?? 'Sin nombre'),
       tableNumber: body.tableNumber,
+      tableId: matchedTable?.id,
       items: resolved.items,
       total: resolved.total,
       source: body.source || 'api',

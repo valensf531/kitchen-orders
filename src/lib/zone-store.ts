@@ -134,6 +134,15 @@ class ZoneStore {
             updated_at = ${now}
         WHERE zone = ${zone.slug} AND user_id = ${userId}
       `;
+      /* Mantener visible la zona actual en pedidos abiertos. */
+      await sql`
+        UPDATE orders
+        SET zone = ${input.slug}, updated_at = ${now}
+        WHERE user_id = ${userId}
+          AND zone = ${zone.slug}
+          AND status != 'canceled'
+          AND paid_at IS NULL
+      `;
     }
 
     return this.getById(id, userId);

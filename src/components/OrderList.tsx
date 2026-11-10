@@ -2,14 +2,14 @@
 
 import { Order, OrderStatus } from '@/types/order';
 import { OrderCard } from './OrderCard';
-import { getOrderDisplayNumber } from '@/lib/order-ops';
+import { getOrderDisplayNumber } from '@/lib/order-number';
 import { CheckCircle, XCircle, AlertTriangle, Clock, Flame, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 interface OrderListProps {
   orders: Order[];
   currentTab: 'active' | OrderStatus | 'dining';
-  onStatusChange: (id: string, status: string) => void;
+  onStatusChange: (id: string, status: string, reason?: string) => void;
   onItemDelivered?: (orderId: string, itemIndex: number, delivered: boolean) => void;
 }
 
@@ -117,7 +117,7 @@ export function OrderList({ orders, currentTab, onStatusChange, onItemDelivered 
             <OrderCard 
               key={order.id} 
               order={order} 
-              orderNumber={getOrderDisplayNumber(order.id)}
+              orderNumber={getOrderDisplayNumber(order)}
               onStatusChange={onStatusChange}
               onItemDelivered={onItemDelivered}
             />

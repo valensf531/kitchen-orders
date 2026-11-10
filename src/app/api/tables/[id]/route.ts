@@ -7,6 +7,9 @@ import { canOperateTables } from '@/lib/permissions';
 import { requireAccess, requireAdmin } from '@/lib/access';
 import { revalidatePublicMenu } from '@/lib/menu-cache';
 import { revalidateStats } from '@/lib/stats-cache';
+import { cashSessionStore } from '@/lib/cash-session-store';
+import { isPaymentMethod } from '@/lib/payments';
+import { signTableToken } from '@/lib/table-token';
 
 export async function GET(
   request: NextRequest,
@@ -29,7 +32,17 @@ export async function GET(
       );
     }
     
-    return NextResponse.json({ table });
+    return NextResponse.json({
+      table: {
+        ...table,
+        publicToken: signTableToken({
+          restaurantId: userId,
+          tableId: table.id,
+          tableNumber: Number(table.number),
+          zone: String(table.zone),
+        }),
+      },
+    });
   } catch (error) {
     console.error('Failed to fetch table:', error);
     return NextResponse.json(
@@ -90,7 +103,21 @@ export async function PATCH(
     }
 
     if (closeAccount) {
-      await orderStore.closeTableAccount(userId, currentTable.number, currentTable.zone);
+      if (body.paymentMethod !== undefined && !isPaymentMethod(body.paymentMethod)) {
+        return NextResponse.json({ error: 'Medio de pago inválido' }, { status: 400 });
+      }
+      const paymentMethod = isPaymentMethod(body.paymentMethod) ? body.paymentMethod : 'cash';
+      const cashSession = await cashSessionStore.open(userId, {
+        id: access.userId,
+        name: access.name,
+      });
+      await orderStore.closeTableAccount(userId, currentTable.number, currentTable.zone, {
+        tableId: currentTable.id,
+        paymentMethod,
+        paidBy: access.userId,
+        paidByName: access.name,
+        cashSessionId: cashSession.id,
+      });
       updateData.status = 'available';
       revalidateStats(userId);
     }
@@ -102,7 +129,11 @@ export async function PATCH(
       if (!validStatuses.includes(status as TableStatus)) {
         return NextResponse.json({ error: 'Estado inválido' }, { status: 400 });
       }
-      const hasOpen = await orderStore.hasOpenOrders(userId, currentTable.number, currentTable.zone);
+      const hasOpen = await orderStore.hasOpenOrders(userId, {
+        id: currentTable.id,
+        number: currentTable.number,
+        zone: currentTable.zone,
+      });
       const blocked = validateManualTableStatusChange({
         targetStatus: status as TableStatus,
         hasOpenOrders: hasOpen,
@@ -158,8 +189,25 @@ export async function DELETE(
     const userId = admin.restaurantId;
 
     const { id } = await params;
+    const table = await tableStore.getById(userId, id);
+    if (!table) {
+      return NextResponse.json({ error: 'Table not found' }, { status: 404 });
+    }
+
+    const hasOpen = await orderStore.hasOpenOrders(userId, {
+      id: table.id,
+      number: table.number,
+      zone: table.zone,
+    });
+    if (hasOpen) {
+      return NextResponse.json(
+        { error: 'La mesa tiene cuentas abiertas. Cobralas o cancelalas antes de eliminarla.' },
+        { status: 409 },
+      );
+    }
+
     const deleted = await tableStore.delete(userId, id);
-    
+
     if (!deleted) {
       return NextResponse.json(
         { error: 'Table not found' },

@@ -234,6 +234,7 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
   const [brandingName, setBrandingName] = useState('');
   const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
   const [restaurantId, setRestaurantId] = useState('');
+  const [publicBaseUrl, setPublicBaseUrl] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -242,6 +243,9 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
       .then((data) => {
         if (!active || !data) return;
         setRestaurantId(data.restaurantId ?? '');
+        if (typeof data.publicBaseUrl === 'string' && data.publicBaseUrl.trim()) {
+          setPublicBaseUrl(data.publicBaseUrl.trim().replace(/\/+$/, ''));
+        }
         setBrandingName(data.branding?.name ?? '');
         setBrandingLogo(data.branding?.logoUrl ?? null);
       })
@@ -251,17 +255,32 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
     };
   }, []);
 
-  const tableMenuUrl = (tableNumber: number) =>
-    restaurantId
-      ? buildTableMenuUrl(window.location.origin, restaurantId, tableNumber)
-      : `${window.location.origin}/menu?table=${tableNumber}`;
+  const publicOrigin =
+    publicBaseUrl ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+
+  const tableMenuUrl = (table: Table) => {
+    if (!publicOrigin || !restaurantId || !table.publicToken) return '';
+    return buildTableMenuUrl(
+      publicOrigin,
+      restaurantId,
+      table.number,
+      table.publicToken,
+    );
+  };
 
   /* QR del menú de la mesa: se imprime y se pega en la mesa. */
   const openQrModal = async (table: Table) => {
     setQrTable(table);
     setQrDataUrl('');
+    const url = tableMenuUrl(table);
+    if (!url) {
+      setError('No se pudo firmar el QR de la mesa. Recargá la página.');
+      return;
+    }
     try {
-      const dataUrl = await QRCode.toDataURL(tableMenuUrl(table.number), {
+      const dataUrl = await QRCode.toDataURL(url, {
         width: 260,
         margin: 2,
         color: { dark: '#0f172a', light: '#ffffff' },
@@ -710,11 +729,11 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
               ) : (
                 <Loader2 className="w-10 h-10 animate-spin text-slate-300" />
               )}
-              <p className="text-xs text-slate-400 text-center break-all">{tableMenuUrl(qrTable.number)}</p>
+              <p className="text-xs text-slate-400 text-center break-all">{tableMenuUrl(qrTable)}</p>
               <div className="flex gap-2 w-full mt-1">
                 <button
                   type="button"
-                  onClick={() => window.open(tableMenuUrl(qrTable.number), '_blank')}
+                  onClick={() => window.open(tableMenuUrl(qrTable), '_blank')}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-100"
                 >
                   <ExternalLink className="w-4 h-4" />

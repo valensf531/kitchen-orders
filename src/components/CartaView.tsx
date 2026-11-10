@@ -48,7 +48,17 @@ function TagBadge({ meta }: { meta: TagMeta }) {
   );
 }
 
-function DishCard({ item, customTags, onOpen }: { item: Item; customTags: CustomTag[]; onOpen: () => void }) {
+function DishCard({
+  item,
+  customTags,
+  currencySymbol,
+  onOpen,
+}: {
+  item: Item;
+  customTags: CustomTag[];
+  currencySymbol: string;
+  onOpen: () => void;
+}) {
   return (
     <article className="bg-white rounded-xl border border-slate-200 flex w-56 shrink-0 snap-start flex-col overflow-hidden sm:w-64">
       <button onClick={onOpen} className="relative block h-32 w-full bg-slate-100" aria-label={`Ver ${item.name}`}>
@@ -72,7 +82,7 @@ function DishCard({ item, customTags, onOpen }: { item: Item; customTags: Custom
           <span className="break-words line-clamp-2 font-semibold leading-snug text-slate-800" title={item.name}>
             {item.name}
           </span>
-          <span className="whitespace-nowrap font-semibold text-indigo-600">${item.price.toFixed(2)}</span>
+          <span className="whitespace-nowrap font-semibold text-indigo-600">{currencySymbol}{item.price.toFixed(2)}</span>
         </div>
         {item.description && <p className="line-clamp-2 text-xs text-slate-500">{item.description}</p>}
         <div className="flex flex-wrap gap-1">
@@ -90,12 +100,14 @@ export function CartaView() {
   const [items, setItems] = useState<Item[]>([]);
   const [customTags, setCustomTags] = useState<CustomTag[]>([]);
   const [branding, setBranding] = useState<{ name: string; logoUrl: string | null }>({ name: '', logoUrl: null });
+  const [currencySymbol, setCurrencySymbol] = useState('$');
   const [popular, setPopular] = useState<{ id: string; count: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [detailItem, setDetailItem] = useState<Item | null>(null);
   const [copied, setCopied] = useState(false);
+  const money = (value: number) => `${currencySymbol}${(Number(value) || 0).toFixed(2)}`;
 
   useEffect(() => {
     let active = true;
@@ -110,11 +122,16 @@ export function CartaView() {
           return;
         }
         setCategories(data.categories ?? []);
-        setBranding({
-          name: typeof data.branding?.name === 'string' ? data.branding.name : '',
-          logoUrl: typeof data.branding?.logoUrl === 'string' ? data.branding.logoUrl : null,
-        });
-        setCustomTags(Array.isArray(data.tags) ? data.tags : []);
+      setBranding({
+        name: typeof data.branding?.name === 'string' ? data.branding.name : '',
+        logoUrl: typeof data.branding?.logoUrl === 'string' ? data.branding.logoUrl : null,
+      });
+      setCurrencySymbol(
+        typeof data.currencySymbol === 'string' && data.currencySymbol.trim()
+          ? data.currencySymbol.trim()
+          : '$',
+      );
+      setCustomTags(Array.isArray(data.tags) ? data.tags : []);
         setPopular(Array.isArray(data.popularItems) ? data.popularItems : []);
         setItems(
           (data.items ?? []).map((item: Item) => ({
@@ -267,7 +284,7 @@ export function CartaView() {
             </h2>
             <div className="flex gap-3 overflow-x-auto pb-2 snap-x">
               {featuredItems.map((item) => (
-                <DishCard key={item.id} item={item} customTags={customTags} onOpen={() => setDetailItem(item)} />
+                <DishCard key={item.id} item={item} customTags={customTags} currencySymbol={currencySymbol} onOpen={() => setDetailItem(item)} />
               ))}
             </div>
           </section>
@@ -280,7 +297,7 @@ export function CartaView() {
             </h2>
             <div className="flex gap-3 overflow-x-auto pb-2 snap-x">
               {popularList.map(({ item }) => (
-                <DishCard key={item.id} item={item} customTags={customTags} onOpen={() => setDetailItem(item)} />
+                <DishCard key={item.id} item={item} customTags={customTags} currencySymbol={currencySymbol} onOpen={() => setDetailItem(item)} />
               ))}
             </div>
           </section>
@@ -320,7 +337,7 @@ export function CartaView() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-semibold text-slate-800 leading-snug break-words">{item.name}</p>
-                        <p className="whitespace-nowrap font-semibold text-indigo-600">${item.price.toFixed(2)}</p>
+                        <p className="whitespace-nowrap font-semibold text-indigo-600">{money(item.price)}</p>
                       </div>
                       {item.description && (
                         <p className="line-clamp-2 text-xs text-slate-500 mt-0.5">{item.description}</p>
@@ -375,7 +392,7 @@ export function CartaView() {
                   {detailItem.name}
                 </h2>
                 <p className="whitespace-nowrap text-lg font-bold text-indigo-600">
-                  ${detailItem.price.toFixed(2)}
+                    {money(detailItem.price)}
                 </p>
               </div>
               {detailItem.description && (

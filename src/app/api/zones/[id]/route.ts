@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { zoneStore, toZoneSlug } from '@/lib/zone-store';
+import { tableStore } from '@/lib/table-store';
+import { orderStore } from '@/lib/store';
 import { requireAdmin } from '@/lib/access';
 import { revalidatePublicMenu } from '@/lib/menu-cache';
 
@@ -61,6 +63,28 @@ export async function DELETE(
     const userId = admin.restaurantId;
 
     const { id } = await params;
+    const zone = await zoneStore.getById(id, userId);
+    if (!zone) {
+      return NextResponse.json({ error: 'Zone not found' }, { status: 404 });
+    }
+
+    const tables = await tableStore.getByZone(userId, zone.slug);
+    for (const table of tables) {
+      const hasOpen = await orderStore.hasOpenOrders(userId, {
+        id: table.id,
+        number: table.number,
+        zone: table.zone,
+      });
+      if (hasOpen) {
+        return NextResponse.json(
+          {
+            error: `La zona tiene cuentas abiertas (mesa ${table.number}). Cobralas o cancelalas antes de eliminarla.`,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     const result = await zoneStore.delete(id, userId);
 
     if (!result.deleted) {

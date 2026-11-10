@@ -2,8 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { Settings, MapPin, Plus, Edit3, Trash2, X, Loader2, Check, DollarSign, Sparkles, Star, ImagePlus, Users, KeyRound, QrCode, UtensilsCrossed, Tags, Printer, Download, Dices, Copy, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Settings, MapPin, Plus, Edit3, Trash2, X, Loader2, Check, DollarSign, Sparkles, Star, ImagePlus, ImageIcon, Users, KeyRound, QrCode, UtensilsCrossed, Tags, Printer, Download, Dices, Copy, Eye, EyeOff, AlertCircle, ChevronUp, ChevronDown, Palette, ExternalLink } from 'lucide-react';
 import { Zone } from '@/types/table';
+import { normalizeMenuStyle, type MenuStyle } from '@/lib/menu-style';
+import {
+  DEFAULT_CURRENCY_CODE,
+  DEFAULT_CURRENCY_SYMBOL,
+  DEFAULT_TIMEZONE,
+} from '@/lib/locale';
+import {
+  DEFAULT_MENU_THEME,
+  MAX_CUSTOM_THEME_NAME,
+  MENU_THEME_PRESETS,
+  THEME_KEYS,
+  normalizeMenuTheme,
+  sameMenuTheme,
+  themeStyle,
+  type CustomMenuTheme,
+  type MenuTheme,
+} from '@/lib/menu-theme';
 import { TableCardPreview } from './TableCardPreview';
 import {
   buildTableMenuUrl,
@@ -43,15 +60,32 @@ interface MenuItem {
   featured: boolean;
 }
 
-type ConfigTab = 'zones' | 'menu' | 'tags' | 'qrs' | 'staff';
+type ConfigTab = 'zones' | 'menu' | 'appearance' | 'tags' | 'qrs' | 'staff';
 
 const CONFIG_TABS: { id: ConfigTab; label: string; icon: typeof MapPin; hint: string }[] = [
   { id: 'zones', label: 'Local', icon: MapPin, hint: 'Zonas del salón' },
-  { id: 'menu', label: 'Menú', icon: UtensilsCrossed, hint: 'Categorías y platos' },
-  { id: 'tags', label: 'Etiquetas', icon: Tags, hint: 'Sellos de los platos' },
+  { id: 'menu', label: 'Menú', icon: UtensilsCrossed, hint: 'Categorías y productos' },
+  { id: 'appearance', label: 'Apariencia', icon: Palette, hint: 'Estilo y colores del menú' },
+  { id: 'tags', label: 'Etiquetas', icon: Tags, hint: 'Sellos de los productos' },
   { id: 'qrs', label: 'QRs', icon: QrCode, hint: 'Para mesas y redes' },
   { id: 'staff', label: 'Personal', icon: Users, hint: 'Vendedores y cocineros' },
 ];
+
+const THEME_COLOR_FIELDS: { key: keyof MenuTheme; label: string }[] = [
+  { key: 'primary', label: 'Principal' },
+  { key: 'accent', label: 'Acento' },
+  { key: 'background', label: 'Fondo' },
+  { key: 'surface', label: 'Superficie' },
+  { key: 'text', label: 'Texto' },
+];
+
+function readCustomTheme(value: unknown): CustomMenuTheme | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as { name?: unknown; theme?: unknown };
+  const name = typeof record.name === 'string' ? record.name.trim() : '';
+  if (!name) return null;
+  return { name, theme: normalizeMenuTheme(record.theme) };
+}
 
 function SectionHeader({ title, hint, action }: { title: string; hint: string; action?: React.ReactNode }) {
   return (
@@ -143,6 +177,10 @@ export function SettingsPage() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
+  const [deletingItem, setDeletingItem] = useState<MenuItem | null>(null);
+  const [deletingItemBusy, setDeletingItemBusy] = useState(false);
+  const [deleteItemError, setDeleteItemError] = useState('');
+  const [reorderingCategories, setReorderingCategories] = useState(false);
 
   /* Acceso efectivo (restaurante + rol) y personal vinculado. */
   const [restaurantId, setRestaurantId] = useState('');
@@ -163,14 +201,34 @@ export function SettingsPage() {
   /* Marca del restaurante (nombre + logo para tarjetas y menú público). */
   const [brandingName, setBrandingName] = useState('');
   const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
+  const [currencyCode, setCurrencyCode] = useState(DEFAULT_CURRENCY_CODE);
+  const [currencySymbol, setCurrencySymbol] = useState(DEFAULT_CURRENCY_SYMBOL);
+  const [publicBaseUrl, setPublicBaseUrl] = useState('');
+  const publicOrigin: string =
+    publicBaseUrl ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
   const [brandingLoaded, setBrandingLoaded] = useState(false);
   const [savingBranding, setSavingBranding] = useState(false);
   const [brandingError, setBrandingError] = useState('');
   const [brandingNotice, setBrandingNotice] = useState('');
   const [logoError, setLogoError] = useState('');
+  const [menuStyle, setMenuStyle] = useState<MenuStyle>('photos');
+  const [savingMenuStyle, setSavingMenuStyle] = useState(false);
+  const [menuStyleError, setMenuStyleError] = useState('');
+  const [menuStyleNotice, setMenuStyleNotice] = useState('');
+  const [menuTheme, setMenuTheme] = useState<MenuTheme>(DEFAULT_MENU_THEME);
+  const [customTheme, setCustomTheme] = useState<CustomMenuTheme | null>(null);
+  const [customThemeName, setCustomThemeName] = useState('');
+  const [customThemeDraft, setCustomThemeDraft] = useState<MenuTheme>(DEFAULT_MENU_THEME);
+  const [customThemeEditorOpen, setCustomThemeEditorOpen] = useState(false);
+  const [savingMenuTheme, setSavingMenuTheme] = useState(false);
+  const [menuThemeError, setMenuThemeError] = useState('');
+  const [menuThemeNotice, setMenuThemeNotice] = useState('');
 
   /* Mesas + tarjeta seleccionada para previsualizar/descargar. */
-  const [tables, setTables] = useState<{ id: string; number: number; zone: string }[]>([]);
+  const [tables, setTables] = useState<{ id: string; number: number; zone: string; publicToken?: string }[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [cardZone, setCardZone] = useState('');
   const [cardTableId, setCardTableId] = useState('');
@@ -183,8 +241,20 @@ export function SettingsPage() {
       const res = await fetch('/api/settings');
       if (!res.ok) return;
       const data = await res.json();
+      if (typeof data.publicBaseUrl === 'string' && data.publicBaseUrl.trim()) {
+        setPublicBaseUrl(data.publicBaseUrl.trim().replace(/\/+$/, ''));
+      }
       setBrandingName(data.branding?.name ?? '');
       setBrandingLogo(data.branding?.logoUrl ?? null);
+      setTimezone(data.branding?.timezone ?? DEFAULT_TIMEZONE);
+      setCurrencyCode(data.branding?.currencyCode ?? DEFAULT_CURRENCY_CODE);
+      setCurrencySymbol(data.branding?.currencySymbol ?? DEFAULT_CURRENCY_SYMBOL);
+      setMenuStyle(normalizeMenuStyle(data.branding?.menuStyle));
+      setMenuTheme(normalizeMenuTheme(data.branding?.theme));
+      const savedCustom = readCustomTheme(data.branding?.customTheme);
+      setCustomTheme(savedCustom);
+      setCustomThemeName(savedCustom?.name ?? '');
+      setCustomThemeDraft(savedCustom?.theme ?? normalizeMenuTheme(data.branding?.theme));
     } catch {
       /* Sin marca: se usa el fallback. */
     } finally {
@@ -233,7 +303,13 @@ export function SettingsPage() {
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: brandingName, logoUrl: brandingLogo }),
+        body: JSON.stringify({
+          name: brandingName,
+          logoUrl: brandingLogo,
+          timezone,
+          currencyCode,
+          currencySymbol,
+        }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -242,13 +318,151 @@ export function SettingsPage() {
       }
       setBrandingName(data.branding?.name ?? '');
       setBrandingLogo(data.branding?.logoUrl ?? null);
-      setBrandingNotice('Marca guardada. Se usa en las tarjetas y en el menú público.');
+      setTimezone(data.branding?.timezone ?? DEFAULT_TIMEZONE);
+      setCurrencyCode(data.branding?.currencyCode ?? DEFAULT_CURRENCY_CODE);
+      setCurrencySymbol(data.branding?.currencySymbol ?? DEFAULT_CURRENCY_SYMBOL);
+      setMenuStyle(normalizeMenuStyle(data.branding?.menuStyle));
+      setMenuTheme(normalizeMenuTheme(data.branding?.theme));
+      const savedCustom = readCustomTheme(data.branding?.customTheme);
+      setCustomTheme(savedCustom);
+      setCustomThemeName(savedCustom?.name ?? '');
+      setCustomThemeDraft(savedCustom?.theme ?? normalizeMenuTheme(data.branding?.theme));
+      setBrandingNotice('Marca y configuración regional guardadas.');
     } catch {
       setBrandingError('Error de red. Intentá de nuevo.');
     } finally {
       setSavingBranding(false);
     }
   };
+
+  const handleMenuStyleChange = async (style: MenuStyle) => {
+    if (savingMenuStyle || style === menuStyle) return;
+    const previous = menuStyle;
+    setMenuStyle(style);
+    setSavingMenuStyle(true);
+    setMenuStyleError('');
+    setMenuStyleNotice('');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ menuStyle: style }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setMenuStyle(previous);
+        setMenuStyleError(data?.error ?? 'No se pudo guardar el estilo del menú.');
+        return;
+      }
+      setMenuStyle(normalizeMenuStyle(data?.branding?.menuStyle));
+      setMenuTheme(normalizeMenuTheme(data?.branding?.theme));
+      setMenuStyleNotice('Estilo guardado. Ya se aplica en el menú público.');
+    } catch {
+      setMenuStyle(previous);
+      setMenuStyleError('Error de red. Revisá tu conexión e intentá de nuevo.');
+    } finally {
+      setSavingMenuStyle(false);
+    }
+  };
+
+  const updateThemeColor = (key: keyof MenuTheme, value: string) => {
+    setCustomThemeDraft((current) => ({ ...current, [key]: value }));
+    setMenuThemeError('');
+    setMenuThemeNotice('');
+  };
+
+  const openCustomThemeEditor = () => {
+    if (customTheme) {
+      setCustomThemeName(customTheme.name);
+      setCustomThemeDraft({ ...customTheme.theme });
+    } else {
+      setCustomThemeName('');
+      setCustomThemeDraft({ ...menuTheme });
+    }
+    setMenuThemeError('');
+    setMenuThemeNotice('');
+    setCustomThemeEditorOpen(true);
+  };
+
+  const closeCustomThemeEditor = () => {
+    setCustomThemeEditorOpen(false);
+    setMenuThemeError('');
+  };
+
+  const handleApplyTheme = async (theme: MenuTheme) => {
+    if (savingMenuTheme) return;
+    const previous = menuTheme;
+    setMenuTheme({ ...theme });
+    setCustomThemeEditorOpen(false);
+    setSavingMenuTheme(true);
+    setMenuThemeError('');
+    setMenuThemeNotice('');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setMenuTheme(previous);
+        setMenuThemeError(data?.error ?? 'No se pudo aplicar el tema.');
+        return;
+      }
+      setMenuTheme(normalizeMenuTheme(data?.branding?.theme));
+      setCustomTheme(readCustomTheme(data?.branding?.customTheme));
+      setMenuThemeNotice('Tema aplicado.');
+    } catch {
+      setMenuTheme(previous);
+      setMenuThemeError('Error de red. Revisá tu conexión e intentá de nuevo.');
+    } finally {
+      setSavingMenuTheme(false);
+    }
+  };
+
+  const handleSaveCustomTheme = async () => {
+    const name = customThemeName.trim();
+    if (!name) {
+      setMenuThemeError('Poné un nombre para tu tema personalizado.');
+      return;
+    }
+    if (savingMenuTheme) return;
+    const theme = { ...customThemeDraft };
+    setSavingMenuTheme(true);
+    setMenuThemeError('');
+    setMenuThemeNotice('');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          theme,
+          customTheme: { name, theme },
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setMenuThemeError(data?.error ?? 'No se pudo guardar el tema personalizado.');
+        return;
+      }
+      setMenuTheme(normalizeMenuTheme(data?.branding?.theme));
+      const savedCustom = readCustomTheme(data?.branding?.customTheme);
+      setCustomTheme(savedCustom);
+      setCustomThemeName(savedCustom?.name ?? name);
+      setCustomThemeDraft(savedCustom?.theme ?? theme);
+      setCustomThemeEditorOpen(false);
+      setMenuThemeNotice(`Tema "${savedCustom?.name ?? name}" guardado y aplicado.`);
+    } catch {
+      setMenuThemeError('Error de red. Revisá tu conexión e intentá de nuevo.');
+    } finally {
+      setSavingMenuTheme(false);
+    }
+  };
+
+  const activeThemePreset = MENU_THEME_PRESETS.find((preset) =>
+    sameMenuTheme(menuTheme, preset.theme),
+  )?.id;
+  const customThemeActive = customTheme ? sameMenuTheme(menuTheme, customTheme.theme) : false;
 
   const fetchStaff = async () => {
     setLoadingStaff(true);
@@ -290,11 +504,15 @@ export function SettingsPage() {
 
   /* Contraseña aleatoria segura (12 caracteres sin ambiguos) para
      cuentas nuevas: el admin la comparte con el empleado. */
-  const handleGenerateStaffPassword = () => {
+  const generateStaffPassword = () => {
     const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
     const bytes = new Uint32Array(12);
     window.crypto.getRandomValues(bytes);
-    setNewStaffPassword(Array.from(bytes, (b) => alphabet[b % alphabet.length]).join(''));
+    return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+  };
+
+  const handleGenerateStaffPassword = () => {
+    setNewStaffPassword(generateStaffPassword());
     setShowStaffPassword(true);
     setCopiedStaffPassword(false);
   };
@@ -402,11 +620,58 @@ export function SettingsPage() {
     }
   };
 
+  const handleChangeStaffRole = async (id: string, role: 'staff' | 'kitchen') => {
+    setStaffError('');
+    setStaffNotice('');
+    try {
+      const res = await fetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        setStaffError('No se pudo cambiar el rol.');
+        return;
+      }
+      setStaff(prev => prev.map(member => member.id === id ? { ...member, role } : member));
+      setStaffNotice(role === 'kitchen' ? 'Rol cambiado a cocina.' : 'Rol cambiado a vendedor.');
+    } catch {
+      setStaffError('Error de red. Intentá de nuevo.');
+    }
+  };
+
+  const handleResetStaffPassword = async (member: StaffMember) => {
+    const password = generateStaffPassword();
+    if (
+      !window.confirm(
+        `¿Resetear la contraseña de ${member.name}? Se cerrarán sus sesiones abiertas.`,
+      )
+    ) {
+      return;
+    }
+    setStaffError('');
+    setStaffNotice('');
+    try {
+      const res = await fetch(`/api/users/${member.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (!res.ok) {
+        setStaffError('No se pudo resetear la contraseña.');
+        return;
+      }
+      setStaffNotice(`Contraseña nueva de ${member.name}: ${password} (copiala ahora).`);
+    } catch {
+      setStaffError('Error de red. Intentá de nuevo.');
+    }
+  };
+
   const [newZoneName, setNewZoneName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryKind, setNewCategoryKind] = useState<'food' | 'drink'>('food');
   const [newItemName, setNewItemName] = useState('');
-  const [newItemPrice, setNewItemPrice] = useState(0);
+  const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
   const [newItemImageUrl, setNewItemImageUrl] = useState('');
   const [newItemDescription, setNewItemDescription] = useState('');
@@ -440,12 +705,20 @@ export function SettingsPage() {
       setCardQr('');
       return;
     }
+    if (!table.publicToken) {
+      setCardError('No se pudo firmar el QR. Recargá la página e intentá de nuevo.');
+      setGeneratingCard(false);
+      return;
+    }
     setGeneratingCard(true);
     setCardError('');
-    QRCode.toDataURL(buildTableMenuUrl(window.location.origin, restaurantId, table.number), {
-      width: 520,
-      margin: 1,
-    })
+    QRCode.toDataURL(
+      buildTableMenuUrl(publicOrigin, restaurantId, table.number, table.publicToken),
+      {
+        width: 520,
+        margin: 1,
+      },
+    )
       .then((url) => {
         if (active) setCardQr(url);
       })
@@ -458,7 +731,7 @@ export function SettingsPage() {
     return () => {
       active = false;
     };
-  }, [restaurantId, cardTableId, tables]);
+  }, [restaurantId, cardTableId, tables, publicOrigin]);
 
   const selectedCardTable = tables.find((t) => t.id === cardTableId) ?? null;
   const selectedZoneName =
@@ -493,10 +766,16 @@ export function SettingsPage() {
     try {
       const cards: TableCardData[] = [];
       for (const table of tables) {
-        const qr = await QRCode.toDataURL(buildTableMenuUrl(window.location.origin, restaurantId, table.number), {
-          width: 520,
-          margin: 1,
-        });
+        if (!table.publicToken) {
+          throw new Error('missing-token');
+        }
+        const qr = await QRCode.toDataURL(
+          buildTableMenuUrl(publicOrigin, restaurantId, table.number, table.publicToken),
+          {
+            width: 520,
+            margin: 1,
+          },
+        );
         const zoneName = zones.find((z) => z.slug === table.zone)?.name ?? table.zone;
         cards.push({ qrDataUrl: qr, zoneName, tableNumber: table.number });
       }
@@ -693,7 +972,7 @@ export function SettingsPage() {
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar esta categoría? Se eliminarán todos los items asociados.')) {
+    if (confirm('¿Estás seguro de eliminar esta categoría? Se eliminarán todos los productos asociados.')) {
       setActionNotice('');
       try {
         const res = await fetch(`/api/menu/categories/${id}`, { method: 'DELETE' });
@@ -706,6 +985,38 @@ export function SettingsPage() {
       } catch {
         setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
       }
+    }
+  };
+
+  const handleMoveCategory = async (id: string, direction: -1 | 1) => {
+    if (reorderingCategories) return;
+    const index = categories.findIndex((category) => category.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= categories.length) return;
+
+    const previous = categories;
+    const next = [...categories];
+    const [moved] = next.splice(index, 1);
+    next.splice(target, 0, moved);
+
+    setCategories(next.map((category, order) => ({ ...category, order })));
+    setActionNotice('');
+    setReorderingCategories(true);
+    try {
+      const res = await fetch('/api/menu/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: next.map((category) => category.id) }),
+      });
+      if (!res.ok) {
+        setCategories(previous);
+        setActionNotice('No se pudo cambiar el orden. Intentá de nuevo.');
+      }
+    } catch {
+      setCategories(previous);
+      setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
+    } finally {
+      setReorderingCategories(false);
     }
   };
 
@@ -729,13 +1040,18 @@ export function SettingsPage() {
   };
 
   const handleSaveItem = async () => {
-    if (!newItemName.trim() || newItemPrice <= 0 || !newItemCategory || submittingItem) return;
+    if (!newItemName.trim() || !newItemCategory || submittingItem) return;
+    const price = Number(newItemPrice.replace(',', '.'));
+    if (!Number.isFinite(price) || price <= 0) {
+      setItemError('Ingresá un precio mayor a 0.');
+      return;
+    }
     setSubmittingItem(true);
     setItemError('');
 
     const payload = {
       name: newItemName,
-      price: newItemPrice,
+      price,
       categoryId: newItemCategory,
       imageUrl: newItemImageUrl || undefined,
       description: newItemDescription.trim() || undefined,
@@ -748,7 +1064,7 @@ export function SettingsPage() {
       setShowItemModal(false);
       setEditingItem(null);
       setNewItemName('');
-      setNewItemPrice(0);
+      setNewItemPrice('');
       setNewItemCategory(categories[0]?.id || '');
       setNewItemImageUrl('');
       setNewItemDescription('');
@@ -772,7 +1088,7 @@ export function SettingsPage() {
           resetItemForm();
         } else {
           const data = await res.json().catch(() => null);
-          setItemError((data?.error as string | undefined) ?? 'No se pudo guardar el plato.');
+          setItemError((data?.error as string | undefined) ?? 'No se pudo guardar el producto.');
         }
       } else {
         const res = await fetch('/api/menu/items', {
@@ -786,7 +1102,7 @@ export function SettingsPage() {
           resetItemForm();
         } else {
           const data = await res.json().catch(() => null);
-          setItemError((data?.error as string | undefined) ?? 'No se pudo crear el plato.');
+          setItemError((data?.error as string | undefined) ?? 'No se pudo crear el producto.');
         }
       }
     } catch {
@@ -796,19 +1112,22 @@ export function SettingsPage() {
     }
   };
 
-  const handleDeleteItem = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar este item?')) {
-      setActionNotice('');
-      try {
-        const res = await fetch(`/api/menu/items/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          setMenuItems(prev => prev.filter(i => i.id !== id));
-        } else {
-          setActionNotice('No se pudo eliminar el plato. Intentá de nuevo.');
-        }
-      } catch {
-        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
+  const handleDeleteItem = async () => {
+    if (!deletingItem || deletingItemBusy) return;
+    setDeleteItemError('');
+    setDeletingItemBusy(true);
+    try {
+      const res = await fetch(`/api/menu/items/${deletingItem.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setMenuItems(prev => prev.filter(i => i.id !== deletingItem.id));
+        setDeletingItem(null);
+      } else {
+        setDeleteItemError('No se pudo eliminar el producto. Intentá de nuevo.');
       }
+    } catch {
+      setDeleteItemError('Error de red. Revisá tu conexión e intentá de nuevo.');
+    } finally {
+      setDeletingItemBusy(false);
     }
   };
 
@@ -906,7 +1225,7 @@ export function SettingsPage() {
   };
 
   const handleDeleteTag = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar esta etiqueta? Se quitará de todos los platos que la usan.')) {
+    if (confirm('¿Estás seguro de eliminar esta etiqueta? Se quitará de todos los productos que la usan.')) {
       setActionNotice('');
       try {
         const res = await fetch(`/api/menu/tags/${id}`, { method: 'DELETE' });
@@ -936,12 +1255,15 @@ export function SettingsPage() {
 
   /* QR del restaurante efectivo (para el personal, el del dueño). */
   const publicMenuUrl = typeof window !== 'undefined' && restaurantId
-    ? `${window.location.origin}/menu?restaurant=${encodeURIComponent(restaurantId)}`
+    ? `${publicOrigin}/menu?restaurant=${encodeURIComponent(restaurantId)}`
     : '';
   /* Vitrina de solo lectura para Instagram/WhatsApp (sin pedido). */
   const cartaUrl = typeof window !== 'undefined' && restaurantId
-    ? `${window.location.origin}/carta?restaurant=${encodeURIComponent(restaurantId)}`
+    ? `${publicOrigin}/carta?restaurant=${encodeURIComponent(restaurantId)}`
     : '';
+  const modernMenuUrl = typeof window !== 'undefined' && restaurantId
+    ? `${publicOrigin}/menu-cafe?restaurant=${encodeURIComponent(restaurantId)}`
+    : '/menu-cafe';
 
   return (
     <div className="p-4 sm:p-6">
@@ -1050,7 +1372,8 @@ export function SettingsPage() {
             {CONFIG_TABS.find((t) => t.id === activeTab)?.hint}
             {activeTab === 'zones' && ' · Las mesas de cada zona se gestionan desde Salón.'}
             {activeTab === 'menu' && ' · Los cambios se reflejan en el QR al instante.'}
-            {activeTab === 'tags' && ' · Se usan para destacar platos en el menú.'}
+            {activeTab === 'appearance' && ' · Los cambios se reflejan en el menú al instante.'}
+            {activeTab === 'tags' && ' · Se usan para destacar productos en el menú.'}
           </p>
         )}
 
@@ -1140,7 +1463,7 @@ export function SettingsPage() {
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <SectionHeader
                 title={`Tus etiquetas${customTags.length > 0 ? ` (${customTags.length})` : ''}`}
-                hint="Crealas una vez y reutilizalas en varios platos."
+                hint="Crealas una vez y reutilizalas en varios productos."
                 action={
                 <button
                   onClick={() => { setEditingTag(null); setNewTagLabel(''); setNewTagIcon(''); setNewTagTone('stone'); setTagError(''); setShowTagModal(true); }}
@@ -1170,7 +1493,7 @@ export function SettingsPage() {
                           <div>
                             <TagBadge meta={meta} />
                             <p className="text-xs text-slate-400 mt-1">
-                              {menuItems.filter(i => i.tags.includes(tag.id)).length} platos la usan
+                              {menuItems.filter(i => i.tags.includes(tag.id)).length} productos la usan
                             </p>
                           </div>
                         </div>
@@ -1230,9 +1553,27 @@ export function SettingsPage() {
                         <p className="text-xs text-slate-400 truncate">{member.email}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wide ${member.role === 'kitchen' ? 'bg-amber-100 text-amber-700' : 'bg-teal-100 text-teal-700'}`}>
-                          {member.role === 'kitchen' ? 'Cocina' : 'Vendedor'}
-                        </span>
+                        <select
+                          value={member.role}
+                          onChange={(e) => handleChangeStaffRole(member.id, e.target.value as 'staff' | 'kitchen')}
+                          aria-label={`Rol de ${member.name}`}
+                          className={`px-2 py-1 text-[11px] font-bold rounded-lg border uppercase tracking-wide ${
+                            member.role === 'kitchen'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-teal-50 text-teal-700 border-teal-200'
+                          }`}
+                        >
+                          <option value="staff">Vendedor</option>
+                          <option value="kitchen">Cocina</option>
+                        </select>
+                        <button
+                          onClick={() => handleResetStaffPassword(member)}
+                          className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
+                          aria-label={`Resetear contraseña de ${member.name}`}
+                          title="Resetear contraseña"
+                        >
+                          <KeyRound className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleDeleteStaff(member.id, member.name)}
                           className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
@@ -1366,6 +1707,369 @@ export function SettingsPage() {
           </div>
         )}
 
+        {activeTab === 'appearance' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <SectionHeader
+                title="Estilo del menú"
+                hint="Elegí cómo se muestran los productos en la carta pública."
+                action={
+                  savingMenuStyle ? (
+                    <span className="inline-flex items-center gap-2 text-xs font-medium text-slate-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Guardando…
+                    </span>
+                  ) : undefined
+                }
+              />
+              <div className="p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => handleMenuStyleChange('photos')}
+                    disabled={savingMenuStyle}
+                    aria-pressed={menuStyle === 'photos'}
+                    className={`flex flex-col gap-3 rounded-xl border-2 p-3 text-left transition-all duration-150 disabled:opacity-60 ${
+                      menuStyle === 'photos'
+                        ? 'border-teal-500 bg-teal-50/40'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                      <div className="mb-2 flex h-14 items-center justify-center rounded-md bg-gradient-to-br from-amber-100 to-slate-200">
+                        <ImageIcon className="h-5 w-5 text-slate-400" />
+                      </div>
+                      <span className="mb-1.5 block h-2 w-20 rounded-full bg-slate-300" />
+                      <span className="block h-1.5 w-12 rounded-full bg-slate-200" />
+                    </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">Con fotos</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Tarjetas grandes con imagen, descripción y precio.
+                        </p>
+                      </div>
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                          menuStyle === 'photos'
+                            ? 'border-teal-600 bg-teal-600 text-white'
+                            : 'border-slate-300 bg-white text-transparent'
+                        }`}
+                      >
+                        <Check className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleMenuStyleChange('list')}
+                    disabled={savingMenuStyle}
+                    aria-pressed={menuStyle === 'list'}
+                    className={`flex flex-col gap-3 rounded-xl border-2 p-3 text-left transition-all duration-150 disabled:opacity-60 ${
+                      menuStyle === 'list'
+                        ? 'border-teal-500 bg-teal-50/40'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                      {[0, 1, 2].map((row) => (
+                        <div
+                          key={row}
+                          className="flex items-center gap-2 border-b border-slate-200 py-1.5 last:border-0"
+                        >
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <span className="block h-1.5 w-16 rounded-full bg-slate-300" />
+                            <span className="block h-1 w-10 rounded-full bg-slate-200" />
+                          </div>
+                          <span className="h-1.5 w-5 rounded-full bg-teal-300" />
+                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-teal-500 text-white">
+                            <Plus className="h-2.5 w-2.5" />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">Sin fotos</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Lista compacta: más productos por pantalla y carga más rápida.
+                        </p>
+                      </div>
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                          menuStyle === 'list'
+                            ? 'border-teal-600 bg-teal-600 text-white'
+                            : 'border-slate-300 bg-white text-transparent'
+                        }`}
+                      >
+                        <Check className="h-3 w-3" />
+                      </span>
+                    </div>
+                  </button>
+                </div>
+                {menuStyleError && <p className="mt-3 text-sm text-rose-600">{menuStyleError}</p>}
+                {menuStyleNotice && <p className="mt-3 text-sm text-emerald-600">{menuStyleNotice}</p>}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <SectionHeader
+                title="Tema de colores"
+                hint="Elegí un preset o creá tu propio tema para el menú moderno de cafetería."
+                action={
+                  savingMenuTheme ? (
+                    <span className="inline-flex items-center gap-2 text-xs font-medium text-slate-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Guardando…
+                    </span>
+                  ) : undefined
+                }
+              />
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {MENU_THEME_PRESETS.map((preset) => {
+                    const selected = !customThemeActive && activeThemePreset === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => handleApplyTheme(preset.theme)}
+                        disabled={savingMenuTheme}
+                        aria-pressed={selected}
+                        className={`rounded-xl border-2 p-2.5 text-left transition-all duration-150 disabled:opacity-60 ${
+                          selected
+                            ? 'border-teal-500 bg-teal-50/40'
+                            : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="flex overflow-hidden rounded-md border border-black/5">
+                          {THEME_KEYS.map((key) => (
+                            <span
+                              key={key}
+                              className="h-7 flex-1"
+                              style={{ backgroundColor: preset.theme[key] }}
+                            />
+                          ))}
+                        </span>
+                        <span className="mt-2 flex items-center justify-between gap-2">
+                          <span>
+                            <span className="block text-sm font-semibold text-slate-800">
+                              {preset.name}
+                            </span>
+                            <span className="block text-[11px] text-slate-500">
+                              {preset.description}
+                            </span>
+                          </span>
+                          {selected && <Check className="h-4 w-4 shrink-0 text-teal-600" />}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  {customTheme ? (
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTheme(customTheme.theme)}
+                      disabled={savingMenuTheme}
+                      aria-pressed={customThemeActive}
+                      className={`rounded-xl border-2 p-2.5 text-left transition-all duration-150 disabled:opacity-60 ${
+                        customThemeActive
+                          ? 'border-teal-500 bg-teal-50/40'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="flex overflow-hidden rounded-md border border-black/5">
+                        {THEME_KEYS.map((key) => (
+                          <span
+                            key={key}
+                            className="h-7 flex-1"
+                            style={{ backgroundColor: customTheme.theme[key] }}
+                          />
+                        ))}
+                      </span>
+                      <span className="mt-2 flex items-center justify-between gap-2">
+                        <span>
+                          <span className="block truncate text-sm font-semibold text-slate-800">
+                            {customTheme.name}
+                          </span>
+                          <span className="block text-[11px] text-slate-500">
+                            Tema personalizado
+                          </span>
+                        </span>
+                        {customThemeActive && (
+                          <Check className="h-4 w-4 shrink-0 text-teal-600" />
+                        )}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={openCustomThemeEditor}
+                      className="rounded-xl border-2 border-dashed border-slate-300 p-2.5 text-left transition-colors hover:border-teal-400 hover:bg-teal-50/30"
+                    >
+                      <span className="flex h-7 items-center justify-center rounded-md border border-dashed border-slate-300 text-slate-400">
+                        <Plus className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="mt-2 block text-sm font-semibold text-slate-700">
+                        Crear tema
+                      </span>
+                      <span className="block text-[11px] text-slate-500">
+                        Con tus propios colores
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-slate-400">Los presets se aplican al instante.</p>
+                  <button
+                    type="button"
+                    onClick={openCustomThemeEditor}
+                    className="text-sm font-medium text-teal-700 hover:text-teal-800"
+                  >
+                    {customTheme ? 'Editar tema personalizado' : 'Crear tema personalizado'}
+                  </button>
+                </div>
+
+                {customThemeEditorOpen && (
+                  <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-700">
+                        {customTheme ? 'Editar tema personalizado' : 'Crear tema personalizado'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={closeCustomThemeEditor}
+                        className="text-sm font-medium text-slate-500 hover:text-slate-700"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <label className="block flex-1">
+                      <span className="mb-1 block text-xs font-semibold text-slate-600">
+                        Nombre del tema personalizado
+                      </span>
+                      <input
+                        id="custom-theme-name"
+                        type="text"
+                        value={customThemeName}
+                        onChange={(event) => {
+                          setCustomThemeName(event.target.value);
+                          setMenuThemeError('');
+                          setMenuThemeNotice('');
+                        }}
+                        placeholder="Ej. Mi café de barrio"
+                        maxLength={MAX_CUSTOM_THEME_NAME}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleSaveCustomTheme}
+                      disabled={savingMenuTheme}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+                    >
+                      {savingMenuTheme ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Palette className="w-4 h-4" />
+                      )}
+                      Guardar y aplicar
+                    </button>
+                  </div>
+
+                  {customTheme && (
+                    <p className="text-xs text-slate-500">
+                      Tema guardado: <span className="font-semibold">{customTheme.name}</span>.
+                      Tocá su tarjeta para volver a aplicarlo.
+                    </p>
+                  )}
+
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-slate-600">
+                      Colores del tema
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                      {THEME_COLOR_FIELDS.map((field) => (
+                        <label key={field.key} className="block">
+                          <span className="mb-1 block text-xs font-semibold text-slate-600">
+                            {field.label}
+                          </span>
+                          <span className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+                            <input
+                              type="color"
+                              value={customThemeDraft[field.key]}
+                              onChange={(event) => updateThemeColor(field.key, event.target.value)}
+                              aria-label={`Color ${field.label}`}
+                              className="h-7 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                            />
+                            <span className="font-mono text-[11px] uppercase text-slate-500">
+                              {customThemeDraft[field.key]}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-3" style={themeStyle(customThemeDraft)}>
+                    <div className="rounded-xl bg-[var(--menu-bg)] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--menu-muted)]">
+                            Vista previa
+                          </p>
+                          <p className="text-lg font-black text-[var(--menu-text)]">Flat white</p>
+                          <p className="text-xs text-[var(--menu-muted)]">
+                            Doble espresso y leche texturizada
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-[var(--menu-accent)] px-2.5 py-1 text-[10px] font-bold text-[var(--menu-on-accent)]">
+                          Nuevo
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-[var(--menu-surface)] p-3">
+                        <div>
+                          <p className="text-sm font-bold text-[var(--menu-text)]">Café de la casa</p>
+                          <p className="text-xs text-[var(--menu-muted)]">Notas de cacao y avellana</p>
+                        </div>
+                        <span className="inline-flex items-center gap-2">
+                          <span className="text-sm font-black text-[var(--menu-text)]">$ 3.200</span>
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--menu-primary)] text-[var(--menu-on-primary)]">
+                            <Plus className="h-4 w-4" />
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-slate-400">
+                    Los colores se aplican al menú moderno de cafetería.
+                  </p>
+                  <a
+                    href={modernMenuUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-teal-700 hover:text-teal-800"
+                  >
+                    Abrir menú moderno
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+
+                {menuThemeError && <p className="text-sm text-rose-600">{menuThemeError}</p>}
+                {menuThemeNotice && <p className="text-sm text-emerald-600">{menuThemeNotice}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'menu' && (
           <div className="space-y-4">
             {menuLoadError && (
@@ -1385,7 +2089,7 @@ export function SettingsPage() {
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <SectionHeader
                 title={`Categorías${categories.length > 0 ? ` (${categories.length})` : ''}`}
-                hint="Agrupan los platos en el QR. Podés generar un ejemplo para empezar."
+                hint="Agrupan los productos en el QR. Usá las flechas para ordenarlas en el menú."
                 action={
                 <div className="flex items-center gap-2">
                   {categories.length === 0 && (
@@ -1427,18 +2131,40 @@ export function SettingsPage() {
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {categories.map((category) => (
-                      <div key={category.id} className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
+                    {categories.map((category, index) => (
+                      <div key={category.id} className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 rounded-lg">
                         <span className="text-sm font-medium text-slate-700">{category.name}</span>
                         {(category.kind ?? 'food') === 'drink' && (
                           <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-700 uppercase tracking-wide">
                             Bebidas
                           </span>
                         )}
-                        <button onClick={() => { setEditingCategory(category); setNewCategoryName(category.name); setNewCategoryKind(category.kind ?? 'food'); setCategoryError(''); setShowCategoryModal(true); }} className="p-1 text-slate-400 hover:text-indigo-600">
+                        <div className="flex items-center gap-0.5 ml-1">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveCategory(category.id, -1)}
+                            disabled={index === 0 || reorderingCategories}
+                            aria-label={`Mover ${category.name} hacia arriba`}
+                            title="Mover arriba"
+                            className="p-1 text-slate-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-slate-400"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveCategory(category.id, 1)}
+                            disabled={index === categories.length - 1 || reorderingCategories}
+                            aria-label={`Mover ${category.name} hacia abajo`}
+                            title="Mover abajo"
+                            className="p-1 text-slate-400 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-slate-400"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <button onClick={() => { setEditingCategory(category); setNewCategoryName(category.name); setNewCategoryKind(category.kind ?? 'food'); setCategoryError(''); setShowCategoryModal(true); }} className="p-1 text-slate-400 hover:text-indigo-600" aria-label={`Editar ${category.name}`}>
                           <Edit3 className="w-3 h-3" />
                         </button>
-                        <button onClick={() => handleDeleteCategory(category.id)} className="p-1 text-slate-400 hover:text-rose-600">
+                        <button onClick={() => handleDeleteCategory(category.id)} className="p-1 text-slate-400 hover:text-rose-600" aria-label={`Eliminar ${category.name}`}>
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
@@ -1450,18 +2176,18 @@ export function SettingsPage() {
 
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <SectionHeader
-                title={`Platos${menuItems.length > 0 ? ` (${menuItems.length})` : ''}`}
-                hint="Tocá el tilde para pausar un plato sin borrarlo."
+                title={`Productos${menuItems.length > 0 ? ` (${menuItems.length})` : ''}`}
+                hint="Tocá el tilde para pausar un producto sin borrarlo."
                 action={
                 <button
                   onClick={() => {
                     if (categories.length === 0) { alert('Primero debes crear al menos una categoría'); return; }
-                     setEditingItem(null); setNewItemName(''); setNewItemPrice(0); setNewItemCategory(categories[0].id); setNewItemImageUrl(''); setNewItemDescription(''); setNewItemIngredients(''); setNewItemTags([]); setNewItemFeatured(false); setImageError(''); setItemError(''); setShowItemModal(true);
+                     setEditingItem(null); setNewItemName(''); setNewItemPrice(''); setNewItemCategory(categories[0].id); setNewItemImageUrl(''); setNewItemDescription(''); setNewItemIngredients(''); setNewItemTags([]); setNewItemFeatured(false); setImageError(''); setItemError(''); setShowItemModal(true);
                   }}
                   className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-all duration-150"
                 >
                   <Plus className="w-4 h-4" />
-                  Nuevo plato
+                  Nuevo producto
                 </button>
                 }
               />
@@ -1470,7 +2196,7 @@ export function SettingsPage() {
                 {loading ? (
                   <div className="p-6 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
                 ) : menuItems.length === 0 ? (
-                  <div className="p-6 text-center text-slate-400">No hay items en el menú</div>
+                  <div className="p-6 text-center text-slate-400">No hay productos en el menú</div>
                 ) : (
                   categories.map((category) => {
                     const categoryItems = menuItems.filter(i => i.categoryId === category.id);
@@ -1489,7 +2215,7 @@ export function SettingsPage() {
                                   {item.featured && <Star className="w-4 h-4 shrink-0 fill-amber-400 text-amber-400" aria-label="Destacado" />}
                                   <p className={`font-medium truncate ${item.available ? 'text-slate-800' : 'text-slate-400'}`}>{item.name}</p>
                                 </div>
-                                <p className="text-sm font-semibold text-indigo-600">${item.price.toFixed(2)}</p>
+                                <p className="text-sm font-semibold text-indigo-600">{currencySymbol}{item.price.toFixed(2)}</p>
                                 {item.tags.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-1.5">
                                     {item.tags.slice(0, 4).map((tag) => (
@@ -1503,10 +2229,14 @@ export function SettingsPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                               <button onClick={() => { setEditingItem(item); setNewItemName(item.name); setNewItemPrice(item.price); setNewItemCategory(item.categoryId); setNewItemImageUrl(item.imageUrl ?? ''); setNewItemDescription(item.description ?? ''); setNewItemIngredients(item.ingredients ?? ''); setNewItemTags(item.tags); setNewItemFeatured(item.featured); setImageError(''); setItemError(''); setShowItemModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                               <button onClick={() => { setEditingItem(item); setNewItemName(item.name); setNewItemPrice(String(item.price)); setNewItemCategory(item.categoryId); setNewItemImageUrl(item.imageUrl ?? ''); setNewItemDescription(item.description ?? ''); setNewItemIngredients(item.ingredients ?? ''); setNewItemTags(item.tags); setNewItemFeatured(item.featured); setImageError(''); setItemError(''); setShowItemModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
                                 <Edit3 className="w-4 h-4" />
                               </button>
-                              <button onClick={() => handleDeleteItem(item.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
+                              <button
+                                onClick={() => { setDeleteItemError(''); setDeletingItem(item); }}
+                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
+                                aria-label={`Eliminar ${item.name}`}
+                              >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
@@ -1583,6 +2313,48 @@ export function SettingsPage() {
                 )}
                 {logoError && <p className="text-sm text-rose-600 mt-2">{logoError}</p>}
               </div>
+              <label className="block sm:col-span-2">
+                <span className="block text-sm font-medium text-slate-600 mb-1">
+                  Zona horaria
+                </span>
+                <input
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  placeholder="America/Argentina/Buenos_Aires"
+                  list="timezone-options"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
+                <datalist id="timezone-options">
+                  <option value="America/Argentina/Buenos_Aires" />
+                  <option value="America/Sao_Paulo" />
+                  <option value="Europe/Madrid" />
+                  <option value="UTC" />
+                </datalist>
+              </label>
+              <label className="block">
+                <span className="block text-sm font-medium text-slate-600 mb-1">
+                  Moneda (ISO)
+                </span>
+                <input
+                  value={currencyCode}
+                  onChange={(e) => setCurrencyCode(e.target.value.toUpperCase())}
+                  maxLength={3}
+                  placeholder="ARS"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm uppercase"
+                />
+              </label>
+              <label className="block">
+                <span className="block text-sm font-medium text-slate-600 mb-1">
+                  Símbolo de moneda
+                </span>
+                <input
+                  value={currencySymbol}
+                  onChange={(e) => setCurrencySymbol(e.target.value)}
+                  maxLength={5}
+                  placeholder="$"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
+              </label>
               {brandingError && <p className="text-sm text-rose-600 sm:col-span-2">{brandingError}</p>}
               {brandingNotice && <p className="text-sm text-emerald-600 sm:col-span-2">{brandingNotice}</p>}
             </div>
@@ -1741,8 +2513,13 @@ export function SettingsPage() {
                 {cardError && <p className="text-sm text-rose-600">{cardError}</p>}
                 {selectedCardTable && (
                   <p className="text-xs text-slate-400 break-all">
-                    {typeof window !== 'undefined' && restaurantId
-                      ? buildTableMenuUrl(window.location.origin, restaurantId, selectedCardTable.number)
+                    {typeof window !== 'undefined' && restaurantId && selectedCardTable.publicToken
+                      ? buildTableMenuUrl(
+                          publicOrigin,
+                          restaurantId,
+                          selectedCardTable.number,
+                          selectedCardTable.publicToken,
+                        )
                       : ''}
                   </p>
                 )}
@@ -1832,19 +2609,31 @@ export function SettingsPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md overflow-y-auto max-h-[90vh] shadow-2xl">
             <div className="flex items-center justify-between p-4 border-b border-slate-100 sticky top-0 bg-white">
-              <h3 className="text-base font-bold text-slate-800">{editingItem ? 'Editar Item' : 'Nuevo Item'}</h3>
+              <h3 className="text-base font-bold text-slate-800">{editingItem ? 'Editar producto' : 'Nuevo producto'}</h3>
               <button onClick={() => setShowItemModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-2">Nombre del Item</label>
+                <label className="block text-sm font-medium text-slate-600 mb-2">Nombre del producto</label>
                 <input type="text" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} placeholder="Ej: Pizza Muzzarella" className="w-full px-3 py-2.5 border border-slate-200 rounded-lg" autoFocus />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-2">Precio</label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input type="number" value={newItemPrice} onChange={(e) => setNewItemPrice(parseFloat(e.target.value) || 0)} className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg" />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={newItemPrice}
+                    onChange={(e) => {
+                      setNewItemPrice(e.target.value);
+                      if (itemError) setItemError('');
+                    }}
+                    placeholder="0"
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg"
+                  />
                 </div>
               </div>
               <div>
@@ -1860,7 +2649,7 @@ export function SettingsPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-2">Ingredientes</label>
                 <textarea value={newItemIngredients} onChange={(e) => setNewItemIngredients(e.target.value)} placeholder="Ej: Tomate, muzzarella, albahaca. Contiene gluten y lactosa." rows={2} className="w-full px-3 py-2.5 border border-slate-200 rounded-lg resize-none" />
-                <p className="text-xs text-slate-400 mt-1">Se muestra en el detalle del plato para clientes con alergias o restricciones.</p>
+                <p className="text-xs text-slate-400 mt-1">Se muestra en el detalle del producto para clientes con alergias o restricciones.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-600 mb-2">Etiquetas</label>
@@ -1898,39 +2687,44 @@ export function SettingsPage() {
                 </div>
                 <p className="text-xs text-slate-400 mt-2">Podés crear más etiquetas en la pestaña «Etiquetas».</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-2">Foto del plato</label>
-                {newItemImageUrl ? (
-                  <div className="flex items-center gap-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local (object URL/data URL); next/image no aplica. */}
-                    <img src={newItemImageUrl} alt="Vista previa de la foto del plato" className="w-20 h-20 object-cover rounded-lg border border-slate-200" />
-                    <button
-                      type="button"
-                      onClick={() => setNewItemImageUrl('')}
-                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-sm font-medium transition-colors"
-                    >
-                      Quitar foto
-                    </button>
-                  </div>
-                ) : (
-                  <label className="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-slate-200 rounded-lg py-6 cursor-pointer hover:border-teal-400 hover:bg-teal-50/40 transition-colors">
-                    <ImagePlus className="w-6 h-6 text-slate-400" />
-                    <span className="text-sm font-medium text-slate-600">Subir una imagen</span>
-                    <span className="text-xs text-slate-400">JPG o PNG · se optimiza automáticamente</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        handleImageChange(file);
-                      }}
-                    />
-                  </label>
-                )}
-                {imageError && <p className="text-sm text-rose-600 mt-2">{imageError}</p>}
-              </div>
+              {menuStyle === 'photos' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-2">Foto del producto</label>
+                  {newItemImageUrl ? (
+                    <div className="flex items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local (object URL/data URL); next/image no aplica. */}
+                      <img src={newItemImageUrl} alt="Vista previa de la foto del producto" className="w-20 h-20 object-cover rounded-lg border border-slate-200" />
+                      <button
+                        type="button"
+                        onClick={() => setNewItemImageUrl('')}
+                        className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Quitar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-slate-200 rounded-lg py-6 cursor-pointer hover:border-teal-400 hover:bg-teal-50/40 transition-colors">
+                      <ImagePlus className="w-6 h-6 text-slate-400" />
+                      <span className="text-sm font-medium text-slate-600">Subir una imagen</span>
+                      <span className="text-xs text-slate-400">JPG o PNG · se optimiza automáticamente</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          handleImageChange(file);
+                        }}
+                      />
+                    </label>
+                  )}
+                  <p className="text-xs text-slate-400 mt-2">
+                    Para que se vea mejor: foto horizontal de 1200×800 px (3:2) o 1280×720 px (16:9), con el producto centrado. Las fotos verticales o cuadradas se recortan.
+                  </p>
+                  {imageError && <p className="text-sm text-rose-600 mt-2">{imageError}</p>}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setNewItemFeatured(!newItemFeatured)}
@@ -1987,6 +2781,50 @@ export function SettingsPage() {
             <div className="flex gap-3 p-4 bg-slate-50">
               <button onClick={() => setShowTagModal(false)} className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-100">Cancelar</button>
               <button onClick={handleSaveTag} disabled={submittingTag} className="flex-1 py-2.5 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50">{submittingTag ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingItem && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-item-title"
+        >
+          <div className="bg-white rounded-xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div className="flex items-start gap-3 p-4">
+              <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 id="delete-item-title" className="text-base font-bold text-slate-800">Eliminar producto</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  ¿Eliminar «{deletingItem.name}» del menú? Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            {deleteItemError && <p className="px-4 pb-3 text-sm text-rose-600">{deleteItemError}</p>}
+            <div className="flex gap-3 p-4 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setDeletingItem(null)}
+                disabled={deletingItemBusy}
+                className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-100 disabled:opacity-50"
+                autoFocus
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteItem}
+                disabled={deletingItemBusy}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-rose-600 text-white rounded-lg font-medium hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deletingItemBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                {deletingItemBusy ? 'Eliminando…' : 'Eliminar'}
+              </button>
             </div>
           </div>
         </div>

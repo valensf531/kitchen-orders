@@ -3,15 +3,27 @@
 /* Exportación a Excel real (XLSX multi-hoja) desde el payload ya cargado.
    Los montos van como número (no texto) para poder sumarlos en Excel. */
 
+import { PAYMENT_METHOD_LABELS } from '@/lib/payments';
+import type { PaymentMethod } from '@/types/order';
+
 export interface StatsExportInput {
   range: { from: string; to: string; timezone: string };
-  summary: { orders: number; canceled: number; revenue: number; collected: number; averageTicket: number };
+  summary: {
+    orders: number;
+    canceled: number;
+    revenue: number;
+    collected: number;
+    pending: number;
+    averageTicket: number;
+  };
   products: { name: string; categoryName: string; units: number; revenue: number }[];
   categories: { name: string; units: number; revenue: number }[];
   salesByDay: { day: string; orders: number; revenue: number; collected: number }[];
   salesByHour: { hour: number; orders: number; revenue: number }[];
   zones: { label: string; orders: number; revenue: number }[];
   channels: { label: string; orders: number; revenue: number }[];
+  paymentMethods: { method: PaymentMethod; orders: number; total: number }[];
+  cancellations: { reason: string; orders: number; amount: number }[];
   tables: { zone: string; table: number; orders: number; revenue: number; avgSeconds: number | null }[];
 }
 
@@ -65,7 +77,8 @@ export async function downloadStatsXlsx(input: StatsExportInput, filename: strin
         ['Cancelaciones', input.summary.canceled],
         ['Ventas', money(input.summary.revenue)],
         ['Cobrado', money(input.summary.collected)],
-        ['A cobrar', money(input.summary.revenue - input.summary.collected)],
+        ['Pendiente de cobro', money(input.summary.pending)],
+        ['Diferencia ventas - cobros', money(input.summary.revenue - input.summary.collected)],
         ['Ticket promedio', money(input.summary.averageTicket)],
       ],
     ),
@@ -125,6 +138,29 @@ export async function downloadStatsXlsx(input: StatsExportInput, filename: strin
     ),
     [2],
   );
+
+  add(
+    'Medios de pago',
+    sheetFrom(
+      ['Medio de pago', 'Pedidos', 'Total cobrado'],
+      input.paymentMethods.map((method) => [
+        PAYMENT_METHOD_LABELS[method.method] ?? 'Otro',
+        method.orders,
+        money(method.total),
+      ]),
+    ),
+    [2],
+  );
+
+  add(
+    'Cancelaciones',
+    sheetFrom(
+      ['Motivo', 'Pedidos', 'Monto cancelado'],
+      input.cancellations.map((row) => [row.reason, row.orders, money(row.amount)]),
+    ),
+    [2],
+  );
+
 
   add(
     'Mesas',

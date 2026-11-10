@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { menuStore } from '@/lib/menu-store';
 import { brandingStore } from '@/lib/branding-store';
+import { DEFAULT_MENU_THEME } from '@/lib/menu-theme';
+import { normalizeMenuStyle } from '@/lib/menu-style';
 import { tableStore } from '@/lib/table-store';
 import { zoneStore } from '@/lib/zone-store';
 import { resolvePublicTable } from '@/lib/public-table';
@@ -10,6 +12,8 @@ import { resolveOrderItems } from '@/lib/pricing';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { publicMenuTag, revalidatePublicMenu } from '@/lib/menu-cache';
 import { revalidateStats } from '@/lib/stats-cache';
+import { verifyTableToken } from '@/lib/table-token';
+import { mercadopagoConfigured } from '@/lib/mercadopago';
 import { logError } from '@/lib/log';
 
 function restaurantId(request: NextRequest) {
@@ -56,6 +60,11 @@ const loadPublicMenu = (userId: string) =>
 
       return {
         restaurantId: userId,
+        menuStyle: normalizeMenuStyle(branding?.menuStyle),
+        theme: branding?.theme ?? DEFAULT_MENU_THEME,
+        currencySymbol: branding?.currencySymbol ?? '$',
+        currencyCode: branding?.currencyCode ?? 'ARS',
+        onlinePaymentsEnabled: mercadopagoConfigured(),
         branding: branding
           ? { name: branding.name, logoUrl: branding.logoUrl }
           : { name: '', logoUrl: null },
@@ -120,15 +129,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /* Precios y total SIEMPRE desde la base: se ignora lo que manda el cliente. */
-    const menuItems = await menuStore.getItems(userId);
-    const categories = await menuStore.getCategories(userId);
-    const categoryKinds = new Map(categories.map((c) => [c.id, c.kind] as const));
-    const resolved = resolveOrderItems(menuItems, body.items, { strict: true, categoryKinds });
-    if (!resolved.ok) {
-      return NextResponse.json({ error: resolved.error }, { status: 400 });
-    }
-
     const tables = await tableStore.getAll(userId);
     const requestedZone = typeof body.zone === 'string' ? body.zone.trim() : '';
     /* La mesa debe existir y el id coincidir con el número (nada de ids
@@ -145,26 +145,77 @@ export async function POST(request: NextRequest) {
     if (!table) {
       return NextResponse.json({ error: 'La mesa no existe' }, { status: 400 });
     }
-    if (table.status === 'available' || table.status === 'paid') {
-      await orderStore.closeTableAccount(userId, table.number, table.zone);
+
+    /* El QR de la mesa incluye un token firmado: sin él no se puede pedir. */
+    if (
+      !verifyTableToken(body.tableToken, {
+        restaurantId: userId,
+        tableId: table.id,
+        tableNumber: Number(table.number),
+        zone: String(table.zone),
+      })
+    ) {
+      return NextResponse.json(
+        { error: 'QR inválido. Escaneá el QR de tu mesa para hacer el pedido.' },
+        { status: 403 },
+      );
     }
 
-    const order = await orderStore.create({
-      userId,
-      customerName:
-        typeof body.customerName === 'string' && body.customerName.trim()
-          ? body.customerName.trim().slice(0, 100)
-          : `Cliente mesa ${tableNumber}`,
-      tableNumber,
-      zone: table.zone,
-      source: 'qr-menu',
-      notes:
-        typeof body.notes === 'string' && body.notes.trim()
-          ? body.notes.trim().slice(0, 300)
-          : undefined,
-      items: resolved.items,
-      total: resolved.total,
-    });
+    const rawIdempotencyKey =
+      typeof body.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '';
+    const clientOrderId = rawIdempotencyKey ? rawIdempotencyKey.slice(0, 100) : undefined;
+    if (clientOrderId) {
+      const existing = await orderStore.getByClientOrderId(userId, clientOrderId);
+      if (existing) {
+        return NextResponse.json({ order: existing, duplicate: true }, { status: 200 });
+      }
+    }
+
+    /* Precios y total SIEMPRE desde la base: se ignora lo que manda el cliente. */
+    const menuItems = await menuStore.getItems(userId);
+    const categories = await menuStore.getCategories(userId);
+    const categoryKinds = new Map(categories.map((c) => [c.id, c.kind] as const));
+    const resolved = resolveOrderItems(menuItems, body.items, { strict: true, categoryKinds });
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: 400 });
+    }
+
+    if (table.status === 'available' || table.status === 'paid') {
+      await orderStore.closeTableAccount(userId, table.number, table.zone, {
+        tableId: table.id,
+      });
+    }
+
+    let order;
+    try {
+      order = await orderStore.create({
+        userId,
+        customerName:
+          typeof body.customerName === 'string' && body.customerName.trim()
+            ? body.customerName.trim().slice(0, 100)
+            : `Cliente mesa ${tableNumber}`,
+        tableNumber,
+        tableId: table.id,
+        clientOrderId,
+        zone: table.zone,
+        source: 'qr-menu',
+        notes:
+          typeof body.notes === 'string' && body.notes.trim()
+            ? body.notes.trim().slice(0, 300)
+            : undefined,
+        items: resolved.items,
+        total: resolved.total,
+      });
+    } catch (error) {
+      /* Otra pestaña/retry ganó la carrera: devolvemos el pedido existente. */
+      if (clientOrderId && (error as { code?: string })?.code === '23505') {
+        const existing = await orderStore.getByClientOrderId(userId, clientOrderId);
+        if (existing) {
+          return NextResponse.json({ order: existing, duplicate: true }, { status: 200 });
+        }
+      }
+      throw error;
+    }
     await tableStore.updateStatus(userId, table.id, 'occupied');
     revalidatePublicMenu(userId);
     revalidateStats(userId);

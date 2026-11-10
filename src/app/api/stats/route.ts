@@ -4,10 +4,13 @@ import { requireAdmin } from '@/lib/access';
 import { statsStore, type ProductSaleRow } from '@/lib/stats-store';
 import { menuStore } from '@/lib/menu-store';
 import { statsTag } from '@/lib/stats-cache';
+import { brandingStore } from '@/lib/branding-store';
+import {
+  DEFAULT_CURRENCY_CODE,
+  DEFAULT_CURRENCY_SYMBOL,
+  DEFAULT_TIMEZONE,
+} from '@/lib/locale';
 import { logError } from '@/lib/log';
-
-/* Zona horaria del restaurante para agrupar por día/hora. */
-const TIMEZONE = 'America/Argentina/Buenos_Aires';
 
 function parseDate(value: string | null): Date | null {
   if (!value) return null;
@@ -45,18 +48,24 @@ export async function GET(request: NextRequest) {
     const fromIso = from.toISOString();
     const toIso = to.toISOString();
     const previousFromIso = new Date(from.getTime() - (to.getTime() - from.getTime())).toISOString();
+    const branding = await brandingStore.getByUserId(userId).catch(() => null);
+    const timezone = branding?.timezone ?? DEFAULT_TIMEZONE;
+    const currencyCode = branding?.currencyCode ?? DEFAULT_CURRENCY_CODE;
+    const currencySymbol = branding?.currencySymbol ?? DEFAULT_CURRENCY_SYMBOL;
 
     const payload = await unstable_cache(
       async () => {
-        const [summary, previous, productRows, byDay, byHour, byZone, byChannel, tables, stages, slowest, menuItems, menuCategories] =
+        const [summary, previous, productRows, byDay, byHour, byZone, byChannel, paymentMethods, cancellationReasons, tables, stages, slowest, menuItems, menuCategories] =
           await Promise.all([
             statsStore.getSummary(userId, fromIso, toIso),
             statsStore.getSummary(userId, previousFromIso, fromIso),
             statsStore.getProductSales(userId, fromIso, toIso),
-            statsStore.getSalesByDay(userId, fromIso, toIso, TIMEZONE),
-            statsStore.getSalesByHour(userId, fromIso, toIso, TIMEZONE),
+            statsStore.getSalesByDay(userId, fromIso, toIso, timezone),
+            statsStore.getSalesByHour(userId, fromIso, toIso, timezone),
             statsStore.getSalesByZone(userId, fromIso, toIso),
             statsStore.getSalesByChannel(userId, fromIso, toIso),
+            statsStore.getPaymentMethods(userId, fromIso, toIso),
+            statsStore.getCancellationReasons(userId, fromIso, toIso),
             statsStore.getTableStats(userId, fromIso, toIso),
             statsStore.getStageTimings(userId, fromIso, toIso),
             statsStore.getProductPrepTimes(userId, fromIso, toIso),
@@ -102,11 +111,15 @@ export async function GET(request: NextRequest) {
           .map((item) => ({ id: item.id, name: item.name }));
 
         return {
-          range: { from: fromIso, to: toIso, timezone: TIMEZONE },
+          range: { from: fromIso, to: toIso, timezone },
+          currencyCode,
+          currencySymbol,
           summary,
           previous: {
             orders: previous.orders,
             revenue: previous.revenue,
+            collected: previous.collected,
+            canceled: previous.canceled,
             averageTicket: previous.averageTicket,
           },
           products,
@@ -116,12 +129,14 @@ export async function GET(request: NextRequest) {
           salesByHour: byHour,
           zones: byZone,
           channels: byChannel,
+          paymentMethods,
+          cancellations: cancellationReasons,
           tables,
           stages,
           slowestProducts: slowest,
         };
       },
-      ['stats', userId, fromIso, toIso],
+      ['stats', userId, fromIso, toIso, timezone, currencySymbol],
       { tags: [statsTag(userId)], revalidate: 60 },
     )();
 

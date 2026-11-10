@@ -8,15 +8,15 @@ import {
 import { validateBranding } from '@/lib/branding-store';
 
 describe('buildTableMenuUrl', () => {
-  it('incluye restaurante y mesa', () => {
-    expect(buildTableMenuUrl('https://demo.com', 'rest-1', 4)).toBe(
-      'https://demo.com/menu?restaurant=rest-1&table=4',
+  it('incluye restaurante, mesa y token', () => {
+    expect(buildTableMenuUrl('https://demo.com', 'rest-1', 4, 'tok.en')).toBe(
+      'https://demo.com/menu?restaurant=rest-1&table=4&token=tok.en',
     );
   });
 
   it('tolera origin con barra final y restaurante con espacios', () => {
     expect(buildTableMenuUrl('https://demo.com/', 'mi resto', 12)).toBe(
-      'https://demo.com/menu?restaurant=mi%20resto&table=12',
+      'https://demo.com/menu?restaurant=mi+resto&table=12',
     );
   });
 });

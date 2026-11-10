@@ -2,6 +2,8 @@ export type OrderStatus = 'received' | 'processing' | 'finished' | 'canceled';
 
 export type OrderItemCategory = 'food' | 'drink';
 
+export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'other' | 'mercadopago';
+
 export interface OrderItem {
   name: string;
   quantity: number;
@@ -17,6 +19,13 @@ export interface Order {
   userId: string;
   customerName: string;
   tableNumber?: number;
+  tableId?: string;
+  displayNumber?: number;
+  clientOrderId?: string;
+  paymentMethod?: PaymentMethod;
+  paidBy?: string;
+  paidByName?: string;
+  cashSessionId?: string;
   items: OrderItem[];
   total: number;
   status: OrderStatus;
@@ -29,6 +38,10 @@ export interface Order {
   startedByName?: string;
   finishedBy?: string;
   finishedByName?: string;
+  canceledAt?: string;
+  canceledBy?: string;
+  canceledByName?: string;
+  cancelReason?: string;
   source?: string;
   notes?: string;
   zone?: string;
@@ -38,6 +51,8 @@ export interface CreateOrderInput {
   userId: string;
   customerName: string;
   tableNumber?: number;
+  tableId?: string;
+  clientOrderId?: string;
   items: OrderItem[];
   total: number;
   source?: string;

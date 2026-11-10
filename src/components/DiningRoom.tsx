@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { OrderItem } from '@/types/order';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Order, OrderItem } from '@/types/order';
 import { Zone, ZoneType } from '@/types/table';
 import { Plus, Minus, Trash2, Send, User, Hash, UtensilsCrossed, MessageSquare, MapPin, AlertCircle, Loader2, EyeOff, Eye } from 'lucide-react';
 
@@ -29,7 +29,7 @@ interface TableInfo {
   status: string;
 }
 
-export function DiningRoom() {
+export function DiningRoom({ orders = [] }: { orders?: Order[] }) {
   const [zones, setZones] = useState<Zone[]>([]);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -47,7 +47,9 @@ export function DiningRoom() {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [stockToggling, setStockToggling] = useState<string | null>(null);
+  const [currencySymbol, setCurrencySymbol] = useState('$');
   const initialized = useRef(false);
+  const money = (value: number) => `${currencySymbol}${(Number(value) || 0).toFixed(2)}`;
 
   useEffect(() => {
     const fetchZones = async () => {
@@ -69,6 +71,13 @@ export function DiningRoom() {
       }
     };
     fetchZones();
+    fetch('/api/settings')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const symbol = data?.branding?.currencySymbol;
+        if (typeof symbol === 'string' && symbol.trim()) setCurrencySymbol(symbol.trim());
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -112,6 +121,33 @@ export function DiningRoom() {
   }, [selectedZone]);
 
   const availableTableNumbers = tables.map(t => t.number);
+
+  /* Cuenta abierta de la mesa elegida: el mozo ve qué hay antes de sumar. */
+  const tableAccount = useMemo(() => {
+    if (!tableNumber) return null;
+    const currentTable = tables.find((table) => table.number === tableNumber);
+    const matches = orders.filter((order) => {
+      if (order.status === 'canceled' || order.paidAt) return false;
+      if (currentTable && order.tableId === currentTable.id) return true;
+      return order.tableNumber === tableNumber && (order.zone ?? '') === selectedZone;
+    });
+    if (matches.length === 0) return null;
+    const items = new Map<string, { name: string; quantity: number; total: number }>();
+    for (const order of matches) {
+      for (const item of order.items) {
+        const key = item.name;
+        const entry = items.get(key) ?? { name: item.name, quantity: 0, total: 0 };
+        entry.quantity += item.quantity;
+        entry.total += (Number(item.price) || 0) * item.quantity;
+        items.set(key, entry);
+      }
+    }
+    return {
+      orders: matches.length,
+      items: Array.from(items.values()),
+      total: matches.reduce((sum, order) => sum + (Number(order.total) || 0), 0),
+    };
+  }, [orders, tableNumber, tables, selectedZone]);
 
   const availableCategories = categories.filter(cat => 
     menuItems.some(item => item.categoryId === cat.id && item.available)
@@ -221,6 +257,12 @@ export function DiningRoom() {
         setCart([]);
         setNotes('');
         setTimeout(() => setSuccessMessage(''), 3000);
+        /* Refresca mesas para que el salón refleje el estado actual. */
+        const tablesRes = await fetch(`/api/tables?zone=${selectedZone}`);
+        if (tablesRes.ok) {
+          const data = await tablesRes.json();
+          setTables(data.tables || []);
+        }
       } else {
         const data = await res.json();
         setErrorMessage(data.error || 'Error al enviar el pedido');
@@ -388,7 +430,7 @@ export function DiningRoom() {
                         className="flex-1 flex justify-between items-center text-left min-w-0"
                       >
                         <span className="text-sm text-slate-700 truncate">{item.name}</span>
-                        <span className="text-sm font-semibold text-indigo-600 ml-2">${item.price.toFixed(2)}</span>
+                        <span className="text-sm font-semibold text-indigo-600 ml-2">{money(item.price)}</span>
                       </button>
                       <button
                         type="button"
@@ -438,6 +480,27 @@ export function DiningRoom() {
             <h2 className="text-base font-bold text-slate-800">Pedido Actual</h2>
           </div>
 
+          {tableAccount && tableNumber && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                Cuenta abierta · Mesa {tableNumber}
+                {tableAccount.orders > 1 ? ` · ${tableAccount.orders} pedidos` : ''}
+              </p>
+              <div className="mt-2 space-y-1">
+                {tableAccount.items.map((item) => (
+                  <div key={item.name} className="flex justify-between gap-2 text-xs text-amber-900">
+                    <span className="truncate">{item.quantity}× {item.name}</span>
+                    <span className="shrink-0 font-semibold">{money(item.total)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex justify-between border-t border-amber-200 pt-2 text-sm font-bold text-amber-900">
+                <span>Total actual</span>
+                <span>{money(tableAccount.total)}</span>
+              </div>
+            </div>
+          )}
+
           {cart.length === 0 ? (
             <p className="text-slate-400 text-center py-8 text-sm">
               Agrega items del menú
@@ -448,7 +511,7 @@ export function DiningRoom() {
                 <div key={item.name} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-700 truncate">{item.name}</p>
-                    <p className="text-xs text-slate-400">${item.price.toFixed(2)} c/u</p>
+                    <p className="text-xs text-slate-400">{money(item.price)} c/u</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
@@ -496,7 +559,7 @@ export function DiningRoom() {
 
               <div className="border-t border-slate-200 pt-3 flex justify-between items-center mb-4">
                 <span className="font-semibold text-slate-600">Total</span>
-                <span className="text-xl font-bold text-indigo-600">${getTotal().toFixed(2)}</span>
+                <span className="text-xl font-bold text-indigo-600">{money(getTotal())}</span>
               </div>
 
               <button

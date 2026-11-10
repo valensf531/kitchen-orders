@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { orderStore } from '@/lib/store';
 import { OrderStatus } from '@/types/order';
 import { requireAccess } from '@/lib/access';
-import { canCreateOrders } from '@/lib/permissions';
+import { canCreateOrders, canOperateTables } from '@/lib/permissions';
 import { logError } from '@/lib/log';
 import { revalidateStats } from '@/lib/stats-cache';
 import { freeTableIfEmpty } from '@/lib/order-ops';
+import { cashSessionStore } from '@/lib/cash-session-store';
+import { isPaymentMethod } from '@/lib/payments';
 
 export async function GET(
   request: NextRequest,
@@ -51,6 +53,37 @@ export async function PATCH(
     }
 
     const body = await request.json();
+
+    /* Cobro puntual de un pedido (p. ej. una cuenta huérfana sin mesa). */
+    if (body.paid === true) {
+      if (!canOperateTables(access.role)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      if (body.paymentMethod !== undefined && !isPaymentMethod(body.paymentMethod)) {
+        return NextResponse.json({ error: 'Medio de pago inválido' }, { status: 400 });
+      }
+      const paymentMethod = isPaymentMethod(body.paymentMethod) ? body.paymentMethod : 'cash';
+      const cashSession = await cashSessionStore.open(userId, {
+        id: access.userId,
+        name: access.name,
+      });
+      const paidOrder = await orderStore.markOrderPaid(id, userId, {
+        paymentMethod,
+        paidBy: access.userId,
+        paidByName: access.name,
+        cashSessionId: cashSession.id,
+      });
+      if (!paidOrder) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
+      await freeTableIfEmpty(paidOrder.userId, {
+        id: paidOrder.tableId,
+        number: paidOrder.tableNumber,
+        zone: paidOrder.zone ?? null,
+      });
+      revalidateStats(paidOrder.userId);
+      return NextResponse.json({ order: paidOrder });
+    }
     
     if (body.itemDelivered !== undefined) {
       const { index, delivered } = body.itemDelivered;
@@ -91,7 +124,7 @@ export async function PATCH(
     const updatedOrder = await orderStore.updateStatus(id, body.status, userId, {
       id: access.userId,
       name: access.name,
-    });
+    }, typeof body.reason === 'string' ? body.reason : undefined);
 
     if (!updatedOrder) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
@@ -99,7 +132,11 @@ export async function PATCH(
 
     /* Al cancelar, si la mesa queda sin cuenta abierta se libera. */
     if (body.status === 'canceled') {
-      await freeTableIfEmpty(order.userId, order.tableNumber, order.zone ?? null);
+      await freeTableIfEmpty(order.userId, {
+        id: order.tableId,
+        number: order.tableNumber,
+        zone: order.zone ?? null,
+      });
     }
 
     revalidateStats(order.userId);
@@ -137,18 +174,28 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const deleted = await orderStore.delete(id, userId);
+    /* Soft-delete: el pedido queda cancelado con actor y motivo (auditoría),
+       no se borra físicamente. */
+    const body = await request.json().catch(() => ({}));
+    const deleted = await orderStore.updateStatus(id, 'canceled', userId, {
+      id: access.userId,
+      name: access.name,
+    }, typeof body.reason === 'string' ? body.reason : 'Eliminado desde el panel');
 
     if (!deleted) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
     /* Si era el último pedido de la mesa, la mesa queda libre. */
-    await freeTableIfEmpty(order.userId, order.tableNumber, order.zone ?? null);
+    await freeTableIfEmpty(order.userId, {
+      id: order.tableId,
+      number: order.tableNumber,
+      zone: order.zone ?? null,
+    });
 
     revalidateStats(order.userId);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, order: deleted });
   } catch (error) {
     logError('orders/[id].DELETE', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

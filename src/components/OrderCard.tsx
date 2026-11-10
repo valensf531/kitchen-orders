@@ -7,7 +7,7 @@ import { useEffect, useState, useMemo } from 'react';
 interface OrderCardProps {
   order: Order;
   orderNumber: number;
-  onStatusChange: (id: string, status: string) => void;
+  onStatusChange: (id: string, status: string, reason?: string) => void;
   onItemDelivered?: (orderId: string, itemIndex: number, delivered: boolean) => void;
 }
 
@@ -147,8 +147,11 @@ export function OrderCard({ order, orderNumber, onStatusChange, onItemDelivered 
   }, []);
 
   const handleCancel = () => {
-    if (!window.confirm(`¿Cancelar el pedido #${String(orderNumber).padStart(3, '0')}? Esta acción libera la mesa si no tiene más pedidos.`)) return;
-    onStatusChange(order.id, 'canceled');
+    const reason = window.prompt(
+      `¿Cancelar el pedido #${String(orderNumber).padStart(3, '0')}? Motivo (opcional):`,
+    );
+    if (reason === null) return;
+    onStatusChange(order.id, 'canceled', reason.trim() || undefined);
   };
 
   const handleDrinkToggle = (originalIndex: number) => {
@@ -213,7 +216,10 @@ export function OrderCard({ order, orderNumber, onStatusChange, onItemDelivered 
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-bold text-slate-800">Pedido #{String(orderNumber).padStart(3, '0')}</h2>
           {order.tableNumber && (
-            <p className="text-sm text-indigo-600 font-semibold mt-0.5">Mesa {order.tableNumber}</p>
+            <p className="text-sm text-indigo-600 font-semibold mt-0.5">
+              Mesa {order.tableNumber}
+              {order.zone ? ` · ${order.zone.replace(/_/g, ' ')}` : ''}
+            </p>
           )}
         </div>
         <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${statusConfig.bg} ${statusConfig.text}`}>

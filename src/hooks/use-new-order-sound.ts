@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 /* Beep sintetizado con Web Audio: no requiere archivo de audio. */
-function playBeep() {
+export function playBeep() {
   try {
     const AudioContextCtor =
       window.AudioContext ??

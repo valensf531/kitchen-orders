@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import { PwaRegister } from "@/components/PwaRegister";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -9,7 +10,9 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://kitchen-orders-three.vercel.app"),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_BASE_URL || "https://kitchen-orders-three.vercel.app",
+  ),
   title: "Lumen Kitchen",
   description:
     "App creada para gestionar pedidos de cocina en un restaurante de manera eficiente y organizada.",
@@ -40,7 +43,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className={geist.variable}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <PwaRegister />
+        {children}
+      </body>
     </html>
   );
 }

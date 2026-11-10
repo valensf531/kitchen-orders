@@ -47,8 +47,6 @@ export function NotificationManager({ orders }: NotificationManagerProps) {
           tag: 'kitchen-alert',
         });
         newOverdue.forEach(o => hasNotifiedRef.current.add(o.id));
-      } else if (Notification.permission === 'default') {
-        Notification.requestPermission();
       }
     }
   }, [overdueOrders]);

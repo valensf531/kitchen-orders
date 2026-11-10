@@ -1,7 +1,7 @@
 /* Helpers puros de estadísticas: formateo, variaciones, rangos y CSV. */
 
-export function formatCurrency(value: number): string {
-  return `$${value.toLocaleString('es-AR', {
+export function formatCurrency(value: number, symbol = '$'): string {
+  return `${symbol}${value.toLocaleString('es-AR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;

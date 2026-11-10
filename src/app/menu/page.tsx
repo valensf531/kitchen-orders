@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   Minus,
@@ -26,6 +26,7 @@ import {
   type CustomTag,
   type TagMeta,
 } from '@/lib/menu-tags';
+import { normalizeMenuStyle, type MenuStyle } from '@/lib/menu-style';
 
 type Item = {
   id: string;
@@ -80,12 +81,14 @@ function ShowcaseCard({
   note,
   rank,
   qty,
+  currencySymbol,
   onOpen,
   onAdd,
   onInc,
   onDec,
 }: {
   item: Item;
+  currencySymbol: string;
   badgeIcon: React.ReactNode;
   badgeLabel: string;
   note?: string;
@@ -120,7 +123,7 @@ function ShowcaseCard({
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-2">
           <span className="break-words line-clamp-2 font-bold leading-snug text-slate-800" title={item.name}>{item.name}</span>
-          <span className="whitespace-nowrap rounded-full bg-teal-50 px-2 py-0.5 font-bold text-teal-700">${item.price.toFixed(2)}</span>
+          <span className="whitespace-nowrap rounded-full bg-teal-50 px-2 py-0.5 font-bold text-teal-700">{currencySymbol}{item.price.toFixed(2)}</span>
         </div>
         {note && <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-500"><Flame className="h-3 w-3" aria-hidden="true" />{note}</p>}
         {(qty ?? 0) > 0 ? (
@@ -155,6 +158,158 @@ function ShowcaseCard({
   );
 }
 
+function TextShowcaseCard({
+  item,
+  qty = 0,
+  customTags,
+  currencySymbol,
+  onOpen,
+  onAdd,
+  onInc,
+  onDec,
+}: {
+  item: Item;
+  qty?: number;
+  customTags: CustomTag[];
+  currencySymbol: string;
+  onOpen: () => void;
+  onAdd: () => void;
+  onInc: () => void;
+  onDec: () => void;
+}) {
+  return (
+    <article className="flex w-60 shrink-0 snap-start flex-col rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+          <Star className="h-3 w-3" aria-hidden="true" />
+          Recomendado
+        </span>
+        <span className="whitespace-nowrap font-black text-teal-700">{currencySymbol}{item.price.toFixed(2)}</span>
+      </div>
+      <button
+        onClick={onOpen}
+        className="mt-2 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+        aria-label={`Ver detalle de ${item.name}`}
+      >
+        <h3 className="line-clamp-2 font-bold leading-snug text-slate-900">{item.name}</h3>
+      </button>
+      {item.description && (
+        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{item.description}</p>
+      )}
+      <div className="mt-2">
+        <TagList tags={item.tags} limit={2} customTags={customTags} />
+      </div>
+      <div className="mt-auto pt-3">
+        {qty > 0 ? (
+          <div className="flex items-center justify-between rounded-xl bg-slate-950 px-2 py-1.5">
+            <button
+              onClick={onDec}
+              aria-label={`Quitar una unidad de ${item.name}`}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white transition-colors hover:bg-white/20"
+            >
+              <Minus className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <span className="font-bold text-white" aria-live="polite">{qty}</span>
+            <button
+              onClick={onInc}
+              aria-label={`Agregar una unidad de ${item.name}`}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500 text-white transition-colors hover:bg-teal-400"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onAdd}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-bold text-white transition-all duration-150 hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 active:scale-[0.98]"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Agregar
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function MenuListRow({
+  item,
+  qty,
+  customTags,
+  currencySymbol,
+  onOpen,
+  onAdd,
+  onInc,
+  onDec,
+}: {
+  item: Item;
+  qty: number;
+  customTags: CustomTag[];
+  currencySymbol: string;
+  onOpen: () => void;
+  onAdd: () => void;
+  onInc: () => void;
+  onDec: () => void;
+}) {
+  return (
+    <article className="flex items-start gap-3 p-4">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 flex-1 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+        aria-label={`Ver detalle de ${item.name}`}
+      >
+        <div className="flex items-start gap-1.5">
+          <h3 className="break-words font-bold leading-snug text-slate-900">{item.name}</h3>
+          {item.featured && (
+            <Star className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" aria-label="Recomendado" />
+          )}
+        </div>
+        {item.description && (
+          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-slate-500">
+            {item.description}
+          </p>
+        )}
+        {item.tags.length > 0 && (
+          <div className="mt-1.5">
+            <TagList tags={item.tags} limit={2} customTags={customTags} />
+          </div>
+        )}
+      </button>
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <span className="whitespace-nowrap font-black text-teal-700">{currencySymbol}{item.price.toFixed(2)}</span>
+        {qty > 0 ? (
+          <div className="flex items-center gap-1 rounded-lg bg-slate-950 p-1">
+            <button
+              onClick={onDec}
+              aria-label={`Quitar una unidad de ${item.name}`}
+              className="flex h-8 w-8 items-center justify-center rounded-md bg-white/10 text-white transition-colors hover:bg-white/20"
+            >
+              <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+            <span className="w-5 text-center text-xs font-bold text-white" aria-live="polite">{qty}</span>
+            <button
+              onClick={onInc}
+              aria-label={`Agregar una unidad de ${item.name}`}
+              className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white transition-colors hover:bg-teal-400"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onAdd}
+            aria-label={`Agregar ${item.name} al pedido`}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-600 text-white transition-all duration-150 hover:bg-teal-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 active:scale-95"
+          >
+            <Plus className="h-5 w-5" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function SectionTitle({ id, eyebrow, title, count, countLabel }: { id?: string; eyebrow: string; title: string; count?: number; countLabel?: string }) {
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
@@ -180,20 +335,39 @@ function PublicMenu() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [customTags, setCustomTags] = useState<CustomTag[]>([]);
+  const [menuStyle, setMenuStyle] = useState<MenuStyle>('photos');
   const [branding, setBranding] = useState<{ name: string; logoUrl: string | null }>({ name: '', logoUrl: null });
+  const [currencySymbol, setCurrencySymbol] = useState('$');
   const [availableTables, setAvailableTables] = useState<PublicTable[]>([]);
   const [publicZones, setPublicZones] = useState<PublicZone[]>([]);
   const [loading, setLoading] = useState(true);
   const [table, setTable] = useState('');
   const [pickedTableId, setPickedTableId] = useState('');
+  const [publicToken, setPublicToken] = useState('');
   const [restaurant, setRestaurant] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState('');
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [onlinePaymentsEnabled, setOnlinePaymentsEnabled] = useState(false);
+  const [lastOrder, setLastOrder] = useState<{
+    id: string;
+    total: number;
+    displayNumber?: number;
+  } | null>(null);
+  const [payment, setPayment] = useState<{
+    id: string;
+    status: string;
+    amount: number;
+    initPoint: string;
+    qrDataUrl: string;
+  } | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
   const [reopenRequested, setReopenRequested] = useState(false);
   const [tableLocked, setTableLocked] = useState(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [detailItem, setDetailItem] = useState<Item | null>(null);
@@ -205,6 +379,7 @@ function PublicMenu() {
     const initialTable = search.get('table') ?? '';
     setRestaurantFromUrl(search.get('restaurant') ?? '');
     setTable(initialTable);
+    setPublicToken(search.get('token') ?? '');
     setTableLocked(Boolean(initialTable));
     setParamsReady(true);
   }, []);
@@ -224,10 +399,17 @@ function PublicMenu() {
       .then((data) => {
         if (!active) return;
         setRestaurant(data.restaurantId ?? '');
+        setMenuStyle(normalizeMenuStyle(data.menuStyle));
         setBranding({
           name: typeof data.branding?.name === 'string' ? data.branding.name : '',
           logoUrl: typeof data.branding?.logoUrl === 'string' ? data.branding.logoUrl : null,
         });
+        setCurrencySymbol(
+          typeof data.currencySymbol === 'string' && data.currencySymbol.trim()
+            ? data.currencySymbol.trim()
+            : '$',
+        );
+        setOnlinePaymentsEnabled(Boolean(data.onlinePaymentsEnabled));
         setAvailableTables(data.tables ?? []);
         setPublicZones(Array.isArray(data.zones) ? data.zones : []);
         setCategories(data.categories ?? []);
@@ -258,11 +440,13 @@ function PublicMenu() {
   const zone = resolvedTable?.zone ?? '';
   /* Si la mesa ya está resuelta (número + id) no se vuelve a pedir: el
      modal solo aparece si falta la mesa, si la del QR no existe (o se
-     borró) o si el usuario pidió cambiarla. */
+     borró) o si el usuario pidió cambiarla. El link general (sin token)
+     también lo muestra para elegir la mesa. */
   const tableModalOpen = !loading && (reopenRequested || !table || !tableId);
   const zoneNameOf = (slug: string) =>
     publicZones.find((z) => z.slug === slug)?.name ?? slug.replace(/_/g, ' ');
   const tableTyped = table.trim().length > 0;
+  const menuWidth = menuStyle === 'list' ? 'max-w-3xl' : 'max-w-5xl';
 
   const searching = search.trim().length > 0;
   const query = search.trim().toLowerCase();
@@ -299,6 +483,7 @@ function PublicMenu() {
   );
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
   const cartQty = (id: string) => cart.find((x) => x.id === id)?.quantity ?? 0;
+  const money = (value: number) => `${currencySymbol}${(Number(value) || 0).toFixed(2)}`;
 
   const addToCart = (item: Item, quantity = 1, notes?: string) =>
     setCart((current) => {
@@ -345,12 +530,22 @@ function PublicMenu() {
       setError('Elegí tu mesa antes de enviar el pedido');
       return;
     }
+    if (!publicToken) {
+      setError('Este menú no tiene un QR válido. Escaneá el QR de tu mesa para pedir.');
+      return;
+    }
     if (cart.length === 0) {
       setError('Agregá al menos un producto');
       return;
     }
     setSubmitting(true);
     setError('');
+    const idempotencyKey =
+      idempotencyKeyRef.current ??
+      (idempotencyKeyRef.current =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `key-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     try {
       const response = await fetch('/api/public/menu', {
         method: 'POST',
@@ -360,15 +555,32 @@ function PublicMenu() {
           tableId,
           tableNumber: table,
           zone,
+          tableToken: publicToken,
+          idempotencyKey,
           notes,
           total,
           items: cart,
         }),
       });
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        setError((await response.json()).error || 'No se pudo enviar el pedido');
+        setError(data?.error || 'No se pudo enviar el pedido');
         return;
       }
+      idempotencyKeyRef.current = null;
+      const createdOrder = data?.order;
+      if (createdOrder?.id) {
+        setLastOrder({
+          id: createdOrder.id,
+          total: Number(createdOrder.total) || total,
+          displayNumber:
+            typeof createdOrder.displayNumber === 'number'
+              ? createdOrder.displayNumber
+              : undefined,
+        });
+      }
+      setPayment(null);
+      setPaymentError('');
       setSent(true);
       setCart([]);
       setNotes('');
@@ -379,17 +591,191 @@ function PublicMenu() {
     }
   };
 
+  const refreshPayment = useCallback(async (paymentId: string) => {
+    try {
+      const response = await fetch(`/api/public/payments/${paymentId}`, {
+        cache: 'no-store',
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.payment) return;
+      setPayment((prev) =>
+        prev && prev.id === paymentId
+          ? {
+              ...prev,
+              status: String(data.payment.status),
+              amount: Number(data.payment.amount) || prev.amount,
+            }
+          : prev,
+      );
+    } catch {
+      /* El polling reintenta; no mostramos error por un corte momentáneo. */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!payment || (payment.status !== 'pending' && payment.status !== 'in_process')) {
+      return;
+    }
+    const paymentId = payment.id;
+    const interval = setInterval(() => {
+      void refreshPayment(paymentId);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [payment, refreshPayment]);
+
+  const startOnlinePayment = async () => {
+    if (!lastOrder || paymentLoading) return;
+    setPaymentLoading(true);
+    setPaymentError('');
+    try {
+      const response = await fetch('/api/public/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantId: restaurant,
+          orderId: lastOrder.id,
+          tableToken: publicToken,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.payment) {
+        setPaymentError(data?.error || 'No se pudo iniciar el pago.');
+        return;
+      }
+      setPayment({
+        id: String(data.payment.id),
+        status: String(data.payment.status),
+        amount: Number(data.payment.amount) || lastOrder.total,
+        initPoint: String(data.payment.initPoint ?? ''),
+        qrDataUrl: String(data.payment.qrDataUrl ?? ''),
+      });
+    } catch {
+      setPaymentError('Error de red. Intentá de nuevo.');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
   if (sent) {
+    const pendingPayment =
+      payment && (payment.status === 'pending' || payment.status === 'in_process');
+    const failedPayment =
+      payment?.status === 'rejected' || payment?.status === 'cancelled';
+
     return (
       <main className="flex min-h-dvh items-center justify-center bg-slate-50 p-6">
         <div className="bg-white rounded-xl border border-slate-200 max-w-md p-8 text-center shadow-sm">
           <CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-emerald-500" aria-hidden="true" />
           <h1 className="text-2xl font-bold text-slate-800">¡Pedido enviado!</h1>
+          {lastOrder?.displayNumber && (
+            <p className="mt-1 text-sm font-bold text-teal-700">
+              Pedido #{lastOrder.displayNumber}
+            </p>
+          )}
           <p className="mt-2 text-slate-500">
-            La cocina ya recibió tu pedido. Podés volver a pedir cuando quieras.
+            La cocina ya recibió tu pedido. Podés pagar ahora o en caja.
           </p>
+
+          {onlinePaymentsEnabled && lastOrder && (
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left">
+              {payment?.status === 'approved' ? (
+                <div className="text-center" aria-live="polite">
+                  <CheckCircle2
+                    className="mx-auto h-10 w-10 text-emerald-500"
+                    aria-hidden="true"
+                  />
+                  <p className="mt-2 font-bold text-emerald-700">Pago aprobado</p>
+                  <p className="text-sm text-slate-500">
+                    {currencySymbol}
+                    {payment.amount.toFixed(2)}
+                  </p>
+                </div>
+              ) : failedPayment ? (
+                <div className="text-center">
+                  <p className="font-semibold text-rose-600">
+                    El pago no se completó.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void startOnlinePayment()}
+                    disabled={paymentLoading}
+                    className="mt-3 w-full rounded-lg bg-sky-500 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-sky-600 disabled:opacity-60"
+                  >
+                    {paymentLoading ? 'Generando pago…' : 'Reintentar pago'}
+                  </button>
+                </div>
+              ) : pendingPayment && payment ? (
+                <div className="text-center" aria-live="polite">
+                  <p className="text-sm font-bold text-slate-700">
+                    Escaneá el QR para pagar
+                  </p>
+                  {payment.qrDataUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element -- QR como data URL
+                    <img
+                      src={payment.qrDataUrl}
+                      alt="QR de Mercado Pago"
+                      className="mx-auto mt-3 h-52 w-52 rounded-lg border border-slate-200 bg-white p-2"
+                    />
+                  )}
+                  <p className="mt-2 text-xl font-black text-slate-800">
+                    {currencySymbol}
+                    {payment.amount.toFixed(2)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Esperando confirmación de Mercado Pago…
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <a
+                      href={payment.initPoint}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 rounded-lg bg-sky-500 px-3 py-2.5 text-center text-sm font-bold text-white transition-colors hover:bg-sky-600"
+                    >
+                      Abrir Mercado Pago
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void refreshPayment(payment.id)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                    >
+                      Actualizar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm font-bold text-slate-700">
+                    ¿Querés pagar ahora?
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pagá online con Mercado Pago escaneando el QR. También podés
+                    pagar en caja.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void startOnlinePayment()}
+                    disabled={paymentLoading}
+                    className="mt-3 w-full rounded-lg bg-sky-500 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-sky-600 disabled:opacity-60"
+                  >
+                    {paymentLoading ? 'Generando pago…' : 'Pagar con Mercado Pago'}
+                  </button>
+                </>
+              )}
+              {paymentError && (
+                <p role="alert" className="mt-2 text-xs font-semibold text-rose-600">
+                  {paymentError}
+                </p>
+              )}
+            </div>
+          )}
+
           <button
-            onClick={() => setSent(false)}
+            onClick={() => {
+              setSent(false);
+              setPayment(null);
+              setPaymentError('');
+              setLastOrder(null);
+            }}
             className="mt-6 w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold text-sm transition-all duration-150"
           >
             Volver al menú
@@ -403,7 +789,7 @@ function PublicMenu() {
     <main className="min-h-dvh overflow-x-hidden bg-canvas text-slate-800 pb-72 sm:pb-32">
       {/* Encabezado con marca + mesa */}
       <header className="bg-white border-b border-slate-200">
-        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-5">
+        <div className={`mx-auto ${menuWidth} px-4 py-4 sm:px-5`}>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
             <div className="flex items-center gap-3 min-w-0">
               {branding.logoUrl ? (
@@ -450,7 +836,7 @@ function PublicMenu() {
                   }`}
                 />
               </div>
-              {tableLocked && (
+              {tableLocked && !publicToken && (
                 <button
                   onClick={() => setReopenRequested(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
@@ -464,7 +850,7 @@ function PublicMenu() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-4 pt-4 sm:px-5 sm:pt-5">
+      <div className={`mx-auto ${menuWidth} px-4 pt-4 sm:px-5 sm:pt-5`}>
         {error && (
           <div role="alert" className="mb-4 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-3 text-rose-700">
             <AlertCircle className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
@@ -475,7 +861,7 @@ function PublicMenu() {
 
       {/* Buscador + mesa + categorías (fijo al scrollear) */}
       <div className="sticky top-0 z-10 border-b border-line bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
-        <div className="mx-auto max-w-5xl space-y-3">
+        <div className={`mx-auto ${menuWidth} space-y-3`}>
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -497,7 +883,7 @@ function PublicMenu() {
                 </button>
               )}
             </div>
-            {tableLocked && tableId && (
+            {tableLocked && tableId && !publicToken && (
               <button
                 type="button"
                 onClick={() => setReopenRequested(true)}
@@ -523,25 +909,40 @@ function PublicMenu() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-5xl px-4 pt-6 sm:px-5 sm:pt-8">
+      <div className={`mx-auto ${menuWidth} px-4 pt-6 sm:px-5 sm:pt-8`}>
         {/* Recomendados del chef */}
         {!loading && !searching && featuredItems.length > 0 && (
           <section aria-labelledby="featured-title" className="mb-10">
             <SectionTitle id="featured-title" eyebrow="Selección de la casa" title="Recomendados del chef" />
             <div className="scrollbar-hide flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
-              {featuredItems.map((item) => (
-                <ShowcaseCard
-                  key={item.id}
-                  item={item}
-                  badgeIcon={<Star className="h-3 w-3" aria-hidden="true" />}
-                  badgeLabel="Recomendado"
-                  qty={cartQty(item.id)}
-                  onOpen={() => openDetail(item)}
-                  onAdd={() => addToCart(item)}
-                  onInc={() => change(item.id, 1)}
-                  onDec={() => change(item.id, -1)}
-                />
-              ))}
+              {featuredItems.map((item) =>
+                menuStyle === 'photos' ? (
+                  <ShowcaseCard
+                    key={item.id}
+                    item={item}
+                    badgeIcon={<Star className="h-3 w-3" aria-hidden="true" />}
+                    badgeLabel="Recomendado"
+                    qty={cartQty(item.id)}
+                    currencySymbol={currencySymbol}
+                    onOpen={() => openDetail(item)}
+                    onAdd={() => addToCart(item)}
+                    onInc={() => change(item.id, 1)}
+                    onDec={() => change(item.id, -1)}
+                  />
+                ) : (
+                  <TextShowcaseCard
+                    key={item.id}
+                    item={item}
+                    qty={cartQty(item.id)}
+                    customTags={customTags}
+                    currencySymbol={currencySymbol}
+                    onOpen={() => openDetail(item)}
+                    onAdd={() => addToCart(item)}
+                    onInc={() => change(item.id, 1)}
+                    onDec={() => change(item.id, -1)}
+                  />
+                ),
+              )}
             </div>
           </section>
         )}
@@ -558,7 +959,7 @@ function PublicMenu() {
                 key={category.id}
                 id={`categoria-${category.id}`}
                 aria-labelledby={`categoria-title-${category.id}`}
-                className="mb-10 scroll-mt-40"
+                className={`${menuStyle === 'list' ? 'mb-8' : 'mb-10'} scroll-mt-40`}
               >
                 <SectionTitle
                   id={`categoria-title-${category.id}`}
@@ -567,9 +968,30 @@ function PublicMenu() {
                   count={sectionItems.length}
                   countLabel={sectionItems.length === 1 ? 'producto' : 'productos'}
                 />
-                <div className="grid grid-cols-1 gap-4 sm:gap-4 lg:grid-cols-3">
+                <div
+                  className={
+                    menuStyle === 'photos'
+                      ? 'grid grid-cols-1 gap-4 sm:gap-4 lg:grid-cols-3'
+                      : 'overflow-hidden rounded-2xl border border-slate-200/80 bg-white divide-y divide-slate-100'
+                  }
+                >
                   {sectionItems.map((item) => {
                     const qty = cartQty(item.id);
+                    if (menuStyle === 'list') {
+                      return (
+                        <MenuListRow
+                          key={item.id}
+                          item={item}
+                          qty={qty}
+                          customTags={customTags}
+                          currencySymbol={currencySymbol}
+                          onOpen={() => openDetail(item)}
+                          onAdd={() => addToCart(item)}
+                          onInc={() => change(item.id, 1)}
+                          onDec={() => change(item.id, -1)}
+                        />
+                      );
+                    }
                     return (
               <article key={item.id} className="bg-white rounded-2xl border border-slate-200/80 flex flex-col overflow-hidden transition-shadow hover:shadow-lg">
                 <button
@@ -598,7 +1020,7 @@ function PublicMenu() {
                     </span>
                   )}
                   <span className="absolute bottom-3 right-3 rounded-full bg-white/95 px-3 py-1 font-bold text-slate-900 shadow-md backdrop-blur">
-                    ${item.price.toFixed(2)}
+                    {money(item.price)}
                   </span>
                 </button>
                 <div className="flex flex-1 flex-col gap-2 p-4">
@@ -665,7 +1087,7 @@ function PublicMenu() {
 
       {cart.length > 0 && (
         <section className="fixed inset-x-0 bottom-0 z-20 px-3 pb-3 sm:px-5 sm:pb-5">
-          <div className="mx-auto max-w-5xl rounded-2xl bg-slate-950 p-4 text-white shadow-2xl sm:p-5">
+          <div className={`mx-auto ${menuWidth} max-h-[85dvh] overflow-y-auto rounded-2xl bg-slate-950 p-4 text-white shadow-2xl sm:p-5`}>
             <div className="flex flex-col gap-3">
               <div className="min-w-0" aria-live="polite">
                 <p className="flex items-center gap-2 font-bold">
@@ -673,7 +1095,7 @@ function PublicMenu() {
                   <span className="inline-flex items-center rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
                     {cartCount} {cartCount === 1 ? 'item' : 'items'}
                   </span>
-                  <span className="ml-auto text-xl font-black">${total.toFixed(2)}</span>
+                  <span className="ml-auto text-xl font-black">{money(total)}</span>
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {cart.map((item) => (
@@ -736,7 +1158,7 @@ function PublicMenu() {
                   ) : (
                     <>
                       <Send className="h-4 w-4" aria-hidden="true" />
-                      Enviar pedido · ${total.toFixed(2)}
+                      Enviar pedido · {money(total)}
                     </>
                   )}
                 </button>
@@ -760,38 +1182,51 @@ function PublicMenu() {
             className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-xl bg-white shadow-2xl sm:rounded-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative h-44 w-full bg-slate-100">
-              {detailItem.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- foto de usuario (data:/externa//api) servida por separado; next/image no optimiza ni abarata aquí.
-                <img src={detailItem.imageUrl} alt={detailItem.name} className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center">
-                  <ImageIcon className="h-12 w-12 text-slate-300" aria-hidden="true" />
-                </span>
-              )}
-              {detailItem.featured && (
-                <span className="absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-md">
-                  <Star className="h-3 w-3" aria-hidden="true" />
-                  Recomendado
-                </span>
-              )}
-              <button
-                onClick={closeDetail}
-                aria-label="Cerrar detalle"
-                className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
+            {menuStyle === 'photos' && (
+              <div className="relative h-44 w-full bg-slate-100">
+                {detailItem.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- foto de usuario (data:/externa//api) servida por separado; next/image no optimiza ni abarata aquí.
+                  <img src={detailItem.imageUrl} alt={detailItem.name} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center">
+                    <ImageIcon className="h-12 w-12 text-slate-300" aria-hidden="true" />
+                  </span>
+                )}
+                {detailItem.featured && (
+                  <span className="absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-md">
+                    <Star className="h-3 w-3" aria-hidden="true" />
+                    Recomendado
+                  </span>
+                )}
+                <button
+                  onClick={closeDetail}
+                  aria-label="Cerrar detalle"
+                  className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
 
             <div className="flex flex-col gap-3 p-5">
               <div className="flex items-start justify-between gap-3">
                 <h2 id="detail-title" className="text-xl font-bold leading-snug text-slate-800">
                   {detailItem.name}
                 </h2>
-                <span className="whitespace-nowrap text-lg font-bold text-indigo-600">
-                  ${detailItem.price.toFixed(2)}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="whitespace-nowrap text-lg font-bold text-indigo-600">
+                    {money(detailItem.price)}
+                  </span>
+                  {menuStyle === 'list' && (
+                    <button
+                      onClick={closeDetail}
+                      aria-label="Cerrar detalle"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <TagList tags={detailItem.tags} limit={8} customTags={customTags} />
@@ -846,7 +1281,7 @@ function PublicMenu() {
                 className="mt-1 w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold text-sm transition-all duration-150 flex items-center justify-center gap-2"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
-                Agregar {detailQty} · ${(detailQty * detailItem.price).toFixed(2)}
+                Agregar {detailQty} · {money(detailQty * detailItem.price)}
               </button>
             </div>
           </div>
@@ -873,7 +1308,9 @@ function PublicMenu() {
               ¿En qué mesa estás?
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              Necesitamos este dato para enviar tu pedido al salón correcto.
+              {publicToken
+                ? 'Necesitamos este dato para enviar tu pedido al salón correcto.'
+                : 'Este link es solo para ver el menú. Para enviar un pedido, escaneá el QR impreso en tu mesa.'}
             </p>
 
             <label htmlFor="table-modal-input" className="sr-only">

@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # local sqlite db (never commit)
 auth.db
@@ -45,3 +46,10 @@ auth.db
 next-env.d.ts
 
 .vercel
+
+# e2e y backups locales
+/e2e/seed.json
+/backups/
+/test-results/
+/playwright-report/
+

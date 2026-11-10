@@ -1,4 +1,4 @@
-import { getSql } from '@/lib/db';
+import { getSql, withTransaction } from '@/lib/db';
 import { normalizeTone } from '@/lib/menu-tags';
 
 export type MenuCategoryKind = 'food' | 'drink';
@@ -275,6 +275,24 @@ class MenuStore {
 
     if (result.length === 0) return undefined;
     return mapRowToCategory(result[0] as CategoryRow);
+  }
+
+  async reorderCategories(userId: string, orderedIds: string[]): Promise<MenuCategory[]> {
+    if (orderedIds.length === 0) return this.getCategories(userId);
+
+    const now = new Date().toISOString();
+
+    await withTransaction(async (sql) => {
+      for (const [index, id] of orderedIds.entries()) {
+        await sql`
+          UPDATE menu_categories
+          SET "order" = ${index}, updated_at = ${now}
+          WHERE id = ${id} AND user_id = ${userId}
+        `;
+      }
+    });
+
+    return this.getCategories(userId);
   }
 
   async deleteCategory(id: string, userId: string): Promise<boolean> {

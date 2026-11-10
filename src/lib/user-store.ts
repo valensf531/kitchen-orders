@@ -98,6 +98,45 @@ export async function createUserWithPassword(input: {
   return { id, name: input.name, email };
 }
 
+/* Cambia el rol de un miembro del personal del restaurante. */
+export async function setStaffRole(
+  userId: string,
+  ownerId: string,
+  role: 'staff' | 'kitchen',
+): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE "user"
+    SET role = ${role}, "updatedAt" = CURRENT_TIMESTAMP
+    WHERE id = ${userId} AND "ownerId" = ${ownerId}
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/* Resetea la contraseña de un miembro y cierra sus sesiones abiertas. */
+export async function setStaffPassword(
+  userId: string,
+  ownerId: string,
+  password: string,
+): Promise<boolean> {
+  const sql = getSql();
+  const existing = await sql`
+    SELECT id FROM "user" WHERE id = ${userId} AND "ownerId" = ${ownerId} LIMIT 1
+  `;
+  if (existing.length === 0) return false;
+
+  const hash = await hashPassword(password);
+  const now = new Date().toISOString();
+  await sql`
+    UPDATE account
+    SET password = ${hash}, "updatedAt" = ${now}
+    WHERE "userId" = ${userId} AND "providerId" = 'credential'
+  `;
+  await sql`DELETE FROM session WHERE "userId" = ${userId}`;
+  return true;
+}
+
 /* Quita el acceso: borra sesiones, cuentas y usuario (cascada manual). */
 export async function deleteStaff(userId: string, ownerId: string): Promise<boolean> {
   const sql = getSql();

@@ -5,18 +5,20 @@ import { downloadStatsXlsx, type StatsExportInput } from '@/lib/stats-export';
 
 const input: StatsExportInput = {
   range: { from: '2026-09-01T00:00:00.000Z', to: '2026-10-01T00:00:00.000Z', timezone: 'America/Argentina/Buenos_Aires' },
-  summary: { orders: 10, canceled: 1, revenue: 1234.5, collected: 1000, averageTicket: 123.45 },
+  summary: { orders: 10, canceled: 1, revenue: 1234.5, collected: 1000, pending: 234.5, averageTicket: 123.45 },
   products: [{ name: 'Pizza', categoryName: 'Pizzas', units: 5, revenue: 500 }],
   categories: [{ name: 'Pizzas', units: 5, revenue: 500 }],
   salesByDay: [{ day: '2026-09-30', orders: 10, revenue: 1234.5, collected: 1000 }],
   salesByHour: [{ hour: 20, orders: 6, revenue: 700 }],
   zones: [{ label: 'Salón', orders: 10, revenue: 1234.5 }],
   channels: [{ label: 'qr-menu', orders: 10, revenue: 1234.5 }],
+  paymentMethods: [{ method: 'cash', orders: 6, total: 600 }],
+  cancellations: [{ reason: 'Cliente se fue', orders: 1, amount: 100 }],
   tables: [{ zone: 'Salón', table: 1, orders: 4, revenue: 400, avgSeconds: 3600 }],
 };
 
 describe('downloadStatsXlsx', () => {
-  it('genera un XLSX con las 8 hojas y montos como número', async () => {
+  it('genera un XLSX con las 10 hojas y montos como número', async () => {
     const path = join(tmpdir(), `stats-test-${Date.now()}.xlsx`);
     await downloadStatsXlsx(input, path);
     const XLSX = await import('xlsx');
@@ -29,6 +31,8 @@ describe('downloadStatsXlsx', () => {
       'Categorías',
       'Salones',
       'Canales',
+      'Medios de pago',
+      'Cancelaciones',
       'Mesas',
     ]);
     const day = XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets['Por día'], { header: 1 });

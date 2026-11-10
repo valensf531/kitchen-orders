@@ -18,7 +18,7 @@ jobs:
 
       - run: npm ci
 
-      - run: node node_modules/eslint/bin/eslint.js src
+      - run: node node_modules/eslint/bin/eslint.js src e2e
 
       - run: npm run typecheck
 
@@ -29,3 +29,79 @@ jobs:
           # No se conecta durante el build; evita fallos por falta de env.
           DATABASE_URL: postgres://ci:ci@localhost:5432/ci
           BETTER_AUTH_URL: http://localhost:3000
+          NEXT_PUBLIC_BASE_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: ci-build-secret-0123456789abcdef
+          PUBLIC_ORDER_SECRET: ci-build-public-secret-0123456789abcdef
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lumen
+          POSTGRES_PASSWORD: lumen
+          POSTGRES_DB: lumen_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lumen"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://lumen:lumen@127.0.0.1:5432/lumen_test
+      BETTER_AUTH_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_BASE_URL: http://127.0.0.1:3000
+      BETTER_AUTH_SECRET: ci-secret-0123456789abcdef0123456789abcdef
+      PUBLIC_ORDER_SECRET: ci-public-order-secret-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Instalar cliente de Postgres (pg_dump/psql)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Migración idempotente en base vacía
+        run: |
+          npm run migrate
+          npm run migrate
+
+      - name: Crear dueño en base vacía
+        run: |
+          npm run create-owner -- \
+            --email owner@ci.test --password ClaveSegura123 --name "CI Owner"
+          node -e "const pg=require('pg');(async()=>{const c=new pg.Client({connectionString:process.env.DATABASE_URL});await c.connect();const u=await c.query('select role from \"user\" where email=\$1',['owner@ci.test']);const a=await c.query('select count(*)::int n from account');if(u.rows[0]?.role!=='admin'||a.rows[0].n<1){console.error('owner/schema inválido');process.exit(1)}await c.end();console.log('create-owner OK')})().catch((e)=>{console.error(e);process.exit(1)})"
+
+      - name: Backup y restore en base limpia
+        run: |
+          npm run db:backup
+          psql "$DATABASE_URL" -c "CREATE DATABASE lumen_restore"
+          DUMP=$(ls backups/*.dump | head -n 1)
+          DATABASE_URL="postgresql://lumen:lumen@127.0.0.1:5432/lumen_restore" \
+            npm run db:restore -- --file "$DUMP" --yes
+          OWNER=$(psql "postgresql://lumen:lumen@127.0.0.1:5432/lumen_restore" -tAc \
+            "select count(*) from \"user\" where email='owner@ci.test'")
+          test "$OWNER" = "1"
+
+      - name: Seed E2E + build
+        run: |
+          npm run seed:e2e
+          npm run build
+
+      - name: E2E (QR → cocina → caja → estadísticas)
+        run: npm run e2e
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build de la imagen Docker
+        run: docker build -t kitchen-orders:ci .

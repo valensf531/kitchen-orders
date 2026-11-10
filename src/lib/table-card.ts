@@ -5,11 +5,21 @@
 export const TABLE_CARD_W = 600;
 export const TABLE_CARD_H = 850;
 
-/* URL del menú para una mesa: incluye restaurante + mesa para que el
-   pedido caiga en el restaurante correcto (cuentas de personal). */
-export function buildTableMenuUrl(origin: string, restaurantId: string, tableNumber: number): string {
+/* URL del menú para una mesa: restaurante + mesa + token firmado. El token
+   evita que alguien pueda pedir a otra mesa sin escanear su QR. */
+export function buildTableMenuUrl(
+  origin: string,
+  restaurantId: string,
+  tableNumber: number,
+  publicToken?: string,
+): string {
   const base = origin.endsWith('/') ? origin.slice(0, -1) : origin;
-  return `${base}/menu?restaurant=${encodeURIComponent(restaurantId)}&table=${encodeURIComponent(String(tableNumber))}`;
+  const params = new URLSearchParams({
+    restaurant: restaurantId,
+    table: String(tableNumber),
+  });
+  if (publicToken) params.set('token', publicToken);
+  return `${base}/menu?${params.toString()}`;
 }
 
 export function escapeHtml(value: string): string {

@@ -17,6 +17,8 @@ export interface Table {
   seats: number;
   createdAt: string;
   updatedAt: string;
+  /* Token firmado que se incluye en el QR de esta mesa (solo API autenticada). */
+  publicToken?: string;
 }
 
 export interface CreateTableInput {

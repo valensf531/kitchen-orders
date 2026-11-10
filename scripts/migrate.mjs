@@ -1,9 +1,11 @@
-// Aplica src/lib/schema.sql contra DATABASE_URL (Neon).
+// Aplica src/lib/schema.sql contra DATABASE_URL (Postgres/Neon).
+// Incluye las tablas de la app y las de Better Auth para que una base nueva
+// quede completa con un solo comando.
 // Uso: npm run migrate  (requiere DATABASE_URL en el entorno o .env.local)
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { neon } from '@neondatabase/serverless';
+import pg from 'pg';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -33,28 +35,29 @@ if (!connectionString) {
   process.exit(1);
 }
 
+function sslFor(url) {
+  if (/[?&]sslmode=(disable|allow|prefer)\b/i.test(url)) return undefined;
+  if (/[?&]sslmode=(require|verify-ca|verify-full)\b/i.test(url) || url.includes('neon.tech')) {
+    return { rejectUnauthorized: false };
+  }
+  return undefined;
+}
+
 const schemaPath = resolve(root, 'src/lib/schema.sql');
 const schema = readFileSync(schemaPath, 'utf8');
 
-const sql = neon(connectionString);
-// Neon http no acepta multi-statement: separamos por ';' de forma simple
-// (schema.sql no contiene funciones con cuerpo ni ';' dentro de strings).
-// Se quitan las líneas de comentario en vez de descartar el bloque.
-const statements = schema
-  .split(';')
-  .map((chunk) =>
-    chunk
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('--'))
-      .join('\n')
-      .trim(),
-  )
-  .filter((s) => s.length > 0);
-
-// Ejecuta cada statement; los ALTER ... IF NOT EXISTS son idempotentes.
-let applied = 0;
-for (const statement of statements) {
-  await sql.query(statement);
-  applied += 1;
+const client = new pg.Client({ connectionString, ssl: sslFor(connectionString) });
+await client.connect();
+try {
+  /* Postgres ejecuta varios statements en un solo query() cuando no hay
+     parámetros (protocolo simple). Todo el esquema es idempotente. */
+  await client.query('BEGIN');
+  await client.query(schema);
+  await client.query('COMMIT');
+  console.log(`Migración OK: ${schemaPath}`);
+} catch (error) {
+  await client.query('ROLLBACK').catch(() => {});
+  throw error;
+} finally {
+  await client.end();
 }
-console.log(`Migración OK: ${applied} statements de ${schemaPath}`);

@@ -1,11 +1,14 @@
 import { getSql } from '@/lib/db';
 import { orderStore } from '@/lib/store';
+import { isPaymentMethod } from '@/lib/payments';
+import type { PaymentMethod } from '@/types/order';
 
 export interface StatsSummary {
   orders: number;
   canceled: number;
   revenue: number;
   collected: number;
+  pending: number;
   averageTicket: number;
 }
 
@@ -41,6 +44,18 @@ export interface TableSaleRow {
   orders: number;
   revenue: number;
   avgSeconds: number | null;
+}
+
+export interface PaymentMethodRow {
+  method: PaymentMethod;
+  orders: number;
+  total: number;
+}
+
+export interface CancellationReasonRow {
+  reason: string;
+  orders: number;
+  amount: number;
 }
 
 export interface StageStats {
@@ -86,15 +101,30 @@ class StatsStore {
     const sql = getSql();
     await this.ready();
 
+    /* Ventas por fecha de creación; cobros por fecha de pago. Un pedido
+       abierto antes de medianoche y cobrado después cae en el día correcto. */
     const rows = await sql`
       SELECT
-        count(*) FILTER (WHERE status != 'canceled')::int AS orders,
-        count(*) FILTER (WHERE status = 'canceled')::int AS canceled,
-        COALESCE(sum(total) FILTER (WHERE status != 'canceled'), 0) AS revenue,
-        COALESCE(sum(total) FILTER (WHERE status != 'canceled' AND paid_at IS NOT NULL), 0) AS collected,
-        COALESCE(avg(total) FILTER (WHERE status != 'canceled'), 0) AS average_ticket
-      FROM orders
-      WHERE user_id = ${userId} AND created_at >= ${from} AND created_at < ${to}
+        (SELECT count(*)::int FROM orders
+          WHERE user_id = ${userId} AND status != 'canceled'
+            AND created_at >= ${from} AND created_at < ${to}) AS orders,
+        (SELECT count(*)::int FROM orders
+          WHERE user_id = ${userId} AND status = 'canceled'
+            AND created_at >= ${from} AND created_at < ${to}) AS canceled,
+        (SELECT COALESCE(sum(total), 0) FROM orders
+          WHERE user_id = ${userId} AND status != 'canceled'
+            AND created_at >= ${from} AND created_at < ${to}) AS revenue,
+        (SELECT COALESCE(sum(total), 0) FROM orders
+          WHERE user_id = ${userId} AND status != 'canceled'
+            AND paid_at IS NOT NULL
+            AND paid_at >= ${from} AND paid_at < ${to}) AS collected,
+        (SELECT COALESCE(sum(total), 0) FROM orders
+          WHERE user_id = ${userId} AND status != 'canceled'
+            AND paid_at IS NULL
+            AND created_at >= ${from} AND created_at < ${to}) AS pending,
+        (SELECT COALESCE(avg(total), 0) FROM orders
+          WHERE user_id = ${userId} AND status != 'canceled'
+            AND created_at >= ${from} AND created_at < ${to}) AS average_ticket
     `;
     const row = (rows[0] ?? {}) as Record<string, string | number>;
 
@@ -103,6 +133,7 @@ class StatsStore {
       canceled: numeric(row.canceled),
       revenue: numeric(row.revenue),
       collected: numeric(row.collected),
+      pending: numeric(row.pending),
       averageTicket: numeric(row.average_ticket),
     };
   }
@@ -137,7 +168,8 @@ class StatsStore {
     }));
   }
 
-  /* Ventas por día (en la zona horaria del restaurante). */
+  /* Ventas por día (en la zona horaria del restaurante). Incluye los días
+     sin movimiento con cero para que el gráfico no saltee fechas. */
   async getSalesByDay(
     userId: string,
     from: string,
@@ -148,20 +180,49 @@ class StatsStore {
     await this.ready();
 
     const rows = await sql`
-      SELECT
-        to_char(created_at AT TIME ZONE ${tz}, 'YYYY-MM-DD') AS day,
-        count(*)::int AS orders,
-        COALESCE(sum(total), 0) AS revenue,
-        COALESCE(sum(total) FILTER (WHERE paid_at IS NOT NULL), 0) AS collected
-      FROM orders
-      WHERE user_id = ${userId}
-        AND status != 'canceled'
-        AND created_at >= ${from} AND created_at < ${to}
-      GROUP BY 1
-      ORDER BY 1
+      WITH days AS (
+        SELECT generate_series(
+          date_trunc('day', ${from}::timestamptz AT TIME ZONE ${tz}),
+          date_trunc('day', ${to}::timestamptz AT TIME ZONE ${tz}),
+          interval '1 day'
+        )::date AS day
+      ),
+      sales AS (
+        SELECT (created_at AT TIME ZONE ${tz})::date AS day,
+               count(*)::int AS orders,
+               COALESCE(sum(total), 0) AS revenue
+        FROM orders
+        WHERE user_id = ${userId}
+          AND status != 'canceled'
+          AND created_at >= ${from} AND created_at < ${to}
+        GROUP BY 1
+      ),
+      collected AS (
+        SELECT (paid_at AT TIME ZONE ${tz})::date AS day,
+               COALESCE(sum(total), 0) AS collected
+        FROM orders
+        WHERE user_id = ${userId}
+          AND status != 'canceled'
+          AND paid_at IS NOT NULL
+          AND paid_at >= ${from} AND paid_at < ${to}
+        GROUP BY 1
+      )
+      SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+             COALESCE(s.orders, 0)::int AS orders,
+             COALESCE(s.revenue, 0) AS revenue,
+             COALESCE(c.collected, 0) AS collected
+      FROM days d
+      LEFT JOIN sales s ON s.day = d.day
+      LEFT JOIN collected c ON c.day = d.day
+      ORDER BY d.day
     `;
 
-    return (rows as { day: string; orders: string | number; revenue: string | number; collected: string | number }[]).map((row) => ({
+    return (rows as {
+      day: string;
+      orders: string | number;
+      revenue: string | number;
+      collected: string | number;
+    }[]).map((row) => ({
       day: row.day,
       orders: numeric(row.orders),
       revenue: numeric(row.revenue),
@@ -247,6 +308,69 @@ class StatsStore {
 
   async getSalesByChannel(userId: string, from: string, to: string) {
     return this.getSalesBy(userId, from, to, 'source');
+  }
+
+  /* Cobros del período agrupados por medio de pago (fecha de pago). */
+  async getPaymentMethods(
+    userId: string,
+    from: string,
+    to: string,
+  ): Promise<PaymentMethodRow[]> {
+    const sql = getSql();
+    await this.ready();
+
+    const rows = await sql`
+      SELECT COALESCE(NULLIF(payment_method, ''), 'other') AS method,
+             count(*)::int AS orders,
+             COALESCE(sum(total), 0) AS total
+      FROM orders
+      WHERE user_id = ${userId}
+        AND status != 'canceled'
+        AND paid_at IS NOT NULL
+        AND paid_at >= ${from} AND paid_at < ${to}
+      GROUP BY 1
+      ORDER BY total DESC
+    `;
+
+    return (rows as { method: string; orders: string | number; total: string | number }[]).map(
+      (row) => ({
+        method: (isPaymentMethod(row.method) ? row.method : 'other') as PaymentMethod,
+        orders: numeric(row.orders),
+        total: numeric(row.total),
+      }),
+    );
+  }
+
+  /* Cancelaciones del período con su motivo (los históricos sin motivo
+     quedan agrupados como "Sin motivo"). */
+  async getCancellationReasons(
+    userId: string,
+    from: string,
+    to: string,
+  ): Promise<CancellationReasonRow[]> {
+    const sql = getSql();
+    await this.ready();
+
+    const rows = await sql`
+      SELECT COALESCE(NULLIF(btrim(cancel_reason), ''), 'Sin motivo') AS reason,
+             count(*)::int AS orders,
+             COALESCE(sum(total), 0) AS amount
+      FROM orders
+      WHERE user_id = ${userId}
+        AND status = 'canceled'
+        AND created_at >= ${from} AND created_at < ${to}
+      GROUP BY 1
+      ORDER BY orders DESC, amount DESC
+      LIMIT 10
+    `;
+
+    return (rows as { reason: string; orders: string | number; amount: string | number }[]).map(
+      (row) => ({
+        reason: row.reason,
+        orders: numeric(row.orders),
+        amount: numeric(row.amount),
+      }),
+    );
   }
 
   /* Uso y facturación por mesa, con la permanencia promedio (creación→cobro). */

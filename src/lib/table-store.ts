@@ -145,6 +145,22 @@ class TableStore {
           updated_at = ${now}
       WHERE id = ${id} AND user_id = ${userId}
     `;
+
+    if (input.number !== undefined && input.number !== table.number) {
+      /* La cuenta abierta sigue a la mesa, aunque cambie el número. */
+      await sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_id VARCHAR(50)`;
+      await sql`
+        UPDATE orders
+        SET table_number = ${newNumber}, updated_at = ${now}
+        WHERE user_id = ${userId}
+          AND status != 'canceled'
+          AND paid_at IS NULL
+          AND (
+            table_id = ${id}
+            OR (table_id IS NULL AND table_number = ${table.number} AND zone = ${table.zone})
+          )
+      `;
+    }
     
     return this.getById(userId, id);
   }

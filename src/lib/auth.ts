@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { nextCookies } from 'better-auth/next-js';
-import { Pool } from '@neondatabase/serverless';
+import { Pool } from 'pg';
 
 type AuthInstance = ReturnType<typeof betterAuth>;
 
@@ -16,6 +16,7 @@ export function getAuth(): AuthInstance {
   if (!_pool) {
     _pool = new Pool({
       connectionString,
+      max: Number(process.env.DATABASE_POOL_MAX) || 10,
     });
   }
   const baseUrl = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_BASE_URL;
@@ -52,7 +53,6 @@ export function getAuth(): AuthInstance {
     /* Orígenes extra por env (uno por cliente en Dokploy, separados por coma).
        better-auth ya confía en el origen de baseURL. */
     trustedOrigins: [
-      'https://kitchen-orders-three.vercel.app',
       'http://localhost:3000',
       ...(process.env.ADDITIONAL_TRUSTED_ORIGINS ?? '')
         .split(',')

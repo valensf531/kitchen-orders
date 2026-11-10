@@ -20,14 +20,16 @@ import {
 } from 'lucide-react';
 import {
   csvNumber,
-  formatCurrency,
+  formatCurrency as baseFormatCurrency,
   formatDuration,
   percentChange,
   rangeForPreset,
   toCsv,
   type RangePreset,
 } from '@/lib/stats-format';
+import { PAYMENT_METHOD_LABELS } from '@/lib/payments';
 import { downloadStatsXlsx } from '@/lib/stats-export';
+import type { PaymentMethod } from '@/types/order';
 
 /* ---------- Tipos del payload de /api/stats ---------- */
 
@@ -50,14 +52,23 @@ interface StatsProduct {
 
 interface StatsPayload {
   range: { from: string; to: string; timezone: string };
+  currencyCode: string;
+  currencySymbol: string;
   summary: {
     orders: number;
     canceled: number;
     revenue: number;
     collected: number;
+    pending: number;
     averageTicket: number;
   };
-  previous: { orders: number; revenue: number; averageTicket: number };
+  previous: {
+    orders: number;
+    revenue: number;
+    collected: number;
+    canceled: number;
+    averageTicket: number;
+  };
   products: StatsProduct[];
   categories: { id: string; name: string; units: number; revenue: number }[];
   unsold: { id: string; name: string }[];
@@ -65,6 +76,8 @@ interface StatsPayload {
   salesByHour: { hour: number; orders: number; revenue: number }[];
   zones: { label: string; orders: number; revenue: number }[];
   channels: { label: string; orders: number; revenue: number }[];
+  paymentMethods: { method: PaymentMethod; orders: number; total: number }[];
+  cancellations: { reason: string; orders: number; amount: number }[];
   tables: {
     zone: string;
     table: number;
@@ -192,7 +205,7 @@ function BarChart({
   data,
   colorClass,
   every = 1,
-  formatValue = formatCurrency,
+  formatValue = (value: number) => baseFormatCurrency(value),
   footer,
 }: {
   data: { label: string; value: number; hint?: string }[];
@@ -261,6 +274,8 @@ export function StatsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
+  const currencySymbol = data?.currencySymbol || '$';
+  const money = (value: number) => baseFormatCurrency(value, currencySymbol);
 
   const range = useMemo(() => {
     if (presetId !== 'custom') return rangeForPreset(presetId);
@@ -309,7 +324,9 @@ export function StatsDashboard() {
 
   const summary = data?.summary;
   const previous = data?.previous;
-  const hasData = Boolean(summary && summary.orders + summary.canceled > 0);
+  const hasData = Boolean(
+    summary && (summary.orders + summary.canceled > 0 || summary.collected > 0),
+  );
 
   const sortedProducts = useMemo(
     () => [...(data?.products ?? [])].sort((a, b) => b[productSort] - a[productSort]),
@@ -344,7 +361,7 @@ export function StatsDashboard() {
 
   const dayFooter =
     dayTotals.orders > 0
-      ? `Total ${formatCurrency(dayTotals.revenue)} · Cobrado ${formatCurrency(dayTotals.collected)} · ${dayTotals.orders} pedidos`
+      ? `Total ${money(dayTotals.revenue)} · Cobrado ${money(dayTotals.collected)} · ${dayTotals.orders} pedidos`
       : undefined;
 
   const peakHour = (data?.salesByHour ?? []).reduce<{ hour: number; revenue: number } | null>(
@@ -352,7 +369,7 @@ export function StatsDashboard() {
     null,
   );
   const hourFooter = peakHour
-    ? `Pico ${peakHour.hour}:00 con ${formatCurrency(peakHour.revenue)}`
+    ? `Pico ${peakHour.hour}:00 con ${money(peakHour.revenue)}`
     : undefined;
 
   const handleExportXlsx = async () => {
@@ -468,14 +485,24 @@ export function StatsDashboard() {
             {/* ================= RESUMEN ================= */}
             {tab === 'resumen' && summary && (
               <>
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   <KpiCard
                     icon={Wallet}
                     label="Ventas"
-                    value={formatCurrency(summary.revenue)}
+                    value={money(summary.revenue)}
                     delta={percentChange(summary.revenue, previous?.revenue ?? 0)}
                   />
-                  <KpiCard icon={Banknote} label="Cobrado" value={formatCurrency(summary.collected)} />
+                  <KpiCard
+                    icon={Banknote}
+                    label="Cobrado"
+                    value={money(summary.collected)}
+                    delta={percentChange(summary.collected, previous?.collected ?? 0)}
+                  />
+                  <KpiCard
+                    icon={Clock}
+                    label="Pendiente de cobro"
+                    value={money(summary.pending)}
+                  />
                   <KpiCard
                     icon={Receipt}
                     label="Pedidos"
@@ -485,7 +512,7 @@ export function StatsDashboard() {
                   <KpiCard
                     icon={Timer}
                     label="Ticket promedio"
-                    value={formatCurrency(summary.averageTicket)}
+                    value={money(summary.averageTicket)}
                     delta={percentChange(summary.averageTicket, previous?.averageTicket ?? 0)}
                   />
                   <KpiCard
@@ -529,6 +556,7 @@ export function StatsDashboard() {
                     colorClass="bg-indigo-500"
                     every={Math.max(1, Math.ceil(dayChartData.length / 10))}
                     footer={dayFooter}
+                    formatValue={money}
                   />
                   {data && data.salesByDay.length > 0 && (
                     <div className="overflow-x-auto mt-4">
@@ -548,13 +576,13 @@ export function StatsDashboard() {
                               <td className="py-2 text-slate-600 tabular-nums">{row.day}</td>
                               <td className="py-2 text-right text-slate-600 tabular-nums">{row.orders}</td>
                               <td className="py-2 text-right font-semibold text-slate-800 tabular-nums">
-                                {formatCurrency(row.revenue)}
+                                {money(row.revenue)}
                               </td>
                               <td className="py-2 text-right font-semibold text-emerald-600 tabular-nums">
-                                {formatCurrency(row.collected)}
+                                {money(row.collected)}
                               </td>
                               <td className="py-2 text-right text-amber-600 tabular-nums">
-                                {formatCurrency(row.revenue - row.collected)}
+                                {money(row.revenue - row.collected)}
                               </td>
                             </tr>
                           ))}
@@ -562,13 +590,13 @@ export function StatsDashboard() {
                             <td className="py-2 text-slate-800">Total</td>
                             <td className="py-2 text-right text-slate-800 tabular-nums">{dayTotals.orders}</td>
                             <td className="py-2 text-right text-slate-800 tabular-nums">
-                              {formatCurrency(dayTotals.revenue)}
+                              {money(dayTotals.revenue)}
                             </td>
                             <td className="py-2 text-right text-emerald-700 tabular-nums">
-                              {formatCurrency(dayTotals.collected)}
+                              {money(dayTotals.collected)}
                             </td>
                             <td className="py-2 text-right text-amber-700 tabular-nums">
-                              {formatCurrency(dayTotals.revenue - dayTotals.collected)}
+                              {money(dayTotals.revenue - dayTotals.collected)}
                             </td>
                           </tr>
                         </tbody>
@@ -600,8 +628,131 @@ export function StatsDashboard() {
                     </button>
                   }
                 >
-                  <BarChart data={hourChartData} colorClass="bg-amber-500" every={3} footer={hourFooter} />
+                  <BarChart
+                    data={hourChartData}
+                    colorClass="bg-amber-500"
+                    every={3}
+                    footer={hourFooter}
+                    formatValue={money}
+                  />
                 </Card>
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <Card
+                    title="Cobros por medio de pago"
+                    icon={Banknote}
+                    action={
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadCsv(`medios-de-pago-${fileRange}.csv`, [
+                            ['Medio de pago', 'Cobros', 'Total'],
+                            ...(data?.paymentMethods ?? []).map((entry) => [
+                              PAYMENT_METHOD_LABELS[entry.method] ?? 'Otro',
+                              entry.orders,
+                              csvNumber(entry.total),
+                            ]),
+                          ])
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-semibold transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        CSV
+                      </button>
+                    }
+                  >
+                    {data && data.paymentMethods.length > 0 ? (
+                      <div className="space-y-2.5">
+                        {data.paymentMethods.map((entry) => {
+                          const maxTotal = Math.max(
+                            ...data.paymentMethods.map((method) => method.total),
+                            1,
+                          );
+                          const share =
+                            summary.collected > 0
+                              ? (entry.total / summary.collected) * 100
+                              : 0;
+                          return (
+                            <div key={entry.method}>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className="text-sm font-medium text-slate-700">
+                                  {PAYMENT_METHOD_LABELS[entry.method] ?? 'Otro'}
+                                </p>
+                                <p className="text-sm font-semibold text-slate-700 shrink-0">
+                                  {money(entry.total)}
+                                </p>
+                              </div>
+                              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500"
+                                  style={{
+                                    width: `${Math.max(1, (entry.total / maxTotal) * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                {entry.orders} cobros · {share.toFixed(1)}% del cobrado
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-400 py-4 text-center">
+                        Sin cobros registrados en este período
+                      </p>
+                    )}
+                  </Card>
+
+                  <Card
+                    title="Motivos de cancelación"
+                    icon={PackageX}
+                    action={
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadCsv(`cancelaciones-${fileRange}.csv`, [
+                            ['Motivo', 'Pedidos', 'Monto cancelado'],
+                            ...(data?.cancellations ?? []).map((row) => [
+                              row.reason,
+                              row.orders,
+                              csvNumber(row.amount),
+                            ]),
+                          ])
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-semibold transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        CSV
+                      </button>
+                    }
+                  >
+                    {data && data.cancellations.length > 0 ? (
+                      <div className="space-y-2">
+                        {data.cancellations.map((row) => (
+                          <div
+                            key={row.reason}
+                            className="flex items-center justify-between gap-3 bg-slate-50 rounded-lg px-3 py-2.5"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-700 truncate" title={row.reason}>
+                                {row.reason}
+                              </p>
+                              <p className="text-[11px] text-slate-400">{row.orders} pedidos</p>
+                            </div>
+                            <p className="text-sm font-semibold text-rose-500 shrink-0">
+                              {money(row.amount)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-400 py-4 text-center">
+                        Sin cancelaciones en este período
+                      </p>
+                    )}
+                  </Card>
+                </div>
               </>
             )}
 
@@ -666,7 +817,7 @@ export function StatsDashboard() {
                             <p className="text-sm font-semibold text-indigo-600 shrink-0">
                               {productSort === 'units'
                                 ? `${product.units} u.`
-                                : formatCurrency(product.revenue)}
+                                : money(product.revenue)}
                             </p>
                           </div>
                           <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -676,7 +827,7 @@ export function StatsDashboard() {
                             />
                           </div>
                           <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                            {product.categoryName} · {productSort === 'units' ? formatCurrency(product.revenue) : `${product.units} u.`}
+                            {product.categoryName} · {productSort === 'units' ? money(product.revenue) : `${product.units} u.`}
                           </p>
                         </div>
                       </div>
@@ -717,7 +868,7 @@ export function StatsDashboard() {
                               <div className="flex items-center justify-between gap-2 mb-1">
                                 <p className="text-sm font-medium text-slate-700 truncate">{category.name}</p>
                                 <p className="text-sm font-semibold text-slate-700 shrink-0">
-                                  {formatCurrency(category.revenue)}
+                                  {money(category.revenue)}
                                 </p>
                               </div>
                               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -790,7 +941,7 @@ export function StatsDashboard() {
                   ))}
                 </div>
 
-                <Card title="Platos más lentos de preparar" icon={Timer}>
+                <Card title="Platos que más demoran la comanda" icon={Timer}>
                   {data && data.slowestProducts.length > 0 ? (
                     <div className="space-y-2">
                       {data.slowestProducts.map((product) => (
@@ -848,7 +999,7 @@ export function StatsDashboard() {
                               <div className="flex items-center justify-between gap-2 mb-1">
                                 <p className="text-sm font-medium text-slate-700 truncate">{zone.label}</p>
                                 <p className="text-sm font-semibold text-slate-700 shrink-0">
-                                  {formatCurrency(zone.revenue)}
+                                  {money(zone.revenue)}
                                 </p>
                               </div>
                               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -904,7 +1055,7 @@ export function StatsDashboard() {
                               <p className="text-[11px] text-slate-400">{channel.orders} pedidos</p>
                             </div>
                             <p className="text-sm font-semibold text-teal-600 shrink-0">
-                              {formatCurrency(channel.revenue)}
+                              {money(channel.revenue)}
                             </p>
                           </div>
                         ))}
@@ -959,7 +1110,7 @@ export function StatsDashboard() {
                               <td className="py-2.5 font-semibold text-slate-800">Nº {row.table}</td>
                               <td className="py-2.5 text-right text-slate-600">{row.orders}</td>
                               <td className="py-2.5 text-right font-semibold text-indigo-600">
-                                {formatCurrency(row.revenue)}
+                                {money(row.revenue)}
                               </td>
                               <td className="py-2.5 text-right text-slate-500">{formatDuration(row.avgSeconds)}</td>
                             </tr>

@@ -3,6 +3,7 @@ import { tableStore } from '@/lib/table-store';
 import { ZoneType, CreateTableInput } from '@/types/table';
 import { requireAccess, requireAdmin } from '@/lib/access';
 import { revalidatePublicMenu } from '@/lib/menu-cache';
+import { signTableToken } from '@/lib/table-token';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,15 +16,26 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const zone = searchParams.get('zone') as ZoneType | null;
 
-    /* ETag: el polling responde 304 (cuerpo vacío) si nada cambió. */
-    const etag = `"tables-${zone ?? 'all'}-${await tableStore.getVersion(userId)}"`;
+    const tables = (
+      zone
+        ? await tableStore.getByZone(userId, zone)
+        : await tableStore.getAll(userId)
+    ).map((table) => ({
+      ...table,
+      publicToken: signTableToken({
+        restaurantId: userId,
+        tableId: table.id,
+        tableNumber: Number(table.number),
+        zone: String(table.zone),
+      }),
+    }));
+
+    /* ETag: el polling responde 304 (cuerpo vacío) si nada cambió.
+       Incluye el token para que un cambio de secreto invalide la respuesta. */
+    const etag = `"tables-${zone ?? 'all'}-${await tableStore.getVersion(userId)}-${tables[0]?.publicToken?.slice(-8) ?? ''}"`;
     if (request.headers.get('if-none-match') === etag) {
       return new NextResponse(null, { status: 304, headers: { ETag: etag } });
     }
-
-    const tables = zone
-      ? await tableStore.getByZone(userId, zone)
-      : await tableStore.getAll(userId);
 
     return NextResponse.json(
       { tables },
