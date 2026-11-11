@@ -136,26 +136,6 @@ test('QR → cocina → caja → mesa libre → estadísticas', async ({ request
   expect(stats.salesByDay.length).toBeGreaterThan(0);
 });
 
-test('el pago online queda deshabilitado sin credenciales de Mercado Pago', async ({
-  request,
-}) => {
-  const menu = await (
-    await request.get(
-      `/api/public/menu?restaurant=${encodeURIComponent(seed.restaurantId)}`,
-    )
-  ).json();
-  expect(menu.onlinePaymentsEnabled).toBe(false);
-
-  const response = await request.post('/api/public/payments', {
-    data: {
-      restaurantId: seed.restaurantId,
-      orderId: 'ORD-inexistente',
-      tableToken: seed.tableToken,
-    },
-  });
-  expect(response.status()).toBe(503);
-});
-
 test('cancelar deja motivo y actor (soft-delete)', async ({ request }) => {
   await signIn(request, seed.ownerEmail, seed.ownerPassword);
 

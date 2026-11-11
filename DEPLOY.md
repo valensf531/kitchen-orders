@@ -81,28 +81,6 @@ Configuración → Personal.
 - Monitoreo externo sugerido: apuntar Uptime Kuma/Better Stack a `/api/health`
   y alertar si falla 2 veces seguidas.
 
-## 7. Pagos online con Mercado Pago
-El menú público puede cobrar con **Checkout Pro**: generamos una preferencia,
-un QR y un link; el cliente paga desde la app/web de Mercado Pago. No requiere
-hardware Point.
-1. Crear una aplicación en el panel de desarrolladores de Mercado Pago y
-   obtener el **Access Token** de producción del cliente.
-2. En la App de Dokploy definir:
-   - `MERCADOPAGO_ACCESS_TOKEN` = token del cliente (uno por restaurante).
-   - `MERCADOPAGO_WEBHOOK_SECRET` = secreto del webhook (recomendado).
-   - `NEXT_PUBLIC_BASE_URL` ya debe estar configurado (se usa para el retorno
-     y la notificación).
-3. Configurar el webhook en Mercado Pago:
-   `https://dominio-del-cliente/api/webhooks/mercadopago` (evento `payment`).
-4. Flujo: el cliente envía el pedido → “Pagar con Mercado Pago” → escanea el
-   QR o abre el link → el webhook (y el polling de respaldo) marca el pedido
-   pagado y libera la mesa si corresponde.
-5. Conciliación: el pago queda en la tabla `payments` y, si hay un turno de
-   caja abierto, se imputa a ese turno. No suma al efectivo esperado del
-   arqueo; sí aparece como “Mercado Pago” en Caja y Estadísticas.
-6. Reembolsos: se registran en `payments` cuando Mercado Pago avisa
-   (`refunded`/`charged_back`), pero no revierten automáticamente el pedido.
-
 ## Notas
 - La app usa `pg` (TCP) contra cualquier Postgres: sirve el Postgres de
   Dokploy/compose y también Neon. En Neon la URL debe incluir `sslmode=require`.

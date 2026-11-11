@@ -1,6 +1,6 @@
 # Roadmap — Lumen (kitchen-orders)
 
-_Actualizado: 2026-11-07_
+_Actualizado: 2026-11-11_
 
 ## Estado actual: cierre del proyecto
 - [x] Flujos por rol probados end-to-end (admin, vendedor, cocinero)
@@ -21,7 +21,6 @@ _Actualizado: 2026-11-07_
 - [x] Migración, `create-owner`, backup y restore probados en CI con Postgres limpio
 - [x] Build de la imagen Docker en CI
 - [x] E2E del flujo completo en CI (QR → cocina → caja → mesa libre → estadísticas)
-- [x] Pago online con Mercado Pago (Checkout Pro + QR + webhook + polling)
 - [x] Soft-delete de pedidos con motivo y actor (no se borra físicamente)
 - [x] Salón: resumen de cuenta abierta al tomar el pedido + refresco de mesas
 - [ ] Limpieza de usuarios/sesiones de prueba
@@ -46,24 +45,36 @@ _Actualizado: 2026-11-07_
 - [x] **Cierre de caja y arqueo:** apertura/cierre de turno, total declarado vs.
   sistema y diferencia (implementado en Caja).
 - [x] Cobro con confirmación, subtotal y liberación de mesa.
-- [x] **Pago online con Mercado Pago (Checkout Pro):** preferencia por pedido,
-  QR + link, webhook firmado y polling de respaldo. El pedido se marca pagado
-  solo y se concilia con el turno de caja y las estadísticas.
-- [x] **Registro de pagos online** en la tabla `payments` (estado, preferencia,
-  pago MP, medio, importe y payload crudo) con conciliación por pedido.
 - [ ] **Split de cuenta:** dividir por comensal, por ítem o en partes iguales
   (hoy se puede cobrar por pedido individual).
 - [ ] Propina y descuento manuales con registro en el cobro.
-- [ ] Reembolsos/anulaciones automáticos: hoy se registra el estado
-  `refunded`/`charged_back` de Mercado Pago, pero no se revierte solo el pedido.
+- [ ] **Pago online:** MercadoPago/QR o link de pago antes de enviar el pedido.
+- [ ] Reembolsos/anulaciones de pago con motivo y actor.
 - [ ] Conciliación automática completa contra el cierre de caja.
 
+## Reportes (estado)
+- [ ] **Motor de reportes agnóstico al canal** — períodos en la zona horaria del
+  restaurante, comparación con el período anterior, idempotencia y registro de
+  entregas (`report_settings`, `report_deliveries`).
+- [ ] **Configuración → Reportes** — canal, frecuencia (diaria/semanal/
+  quincenal/mensual), horario, email/teléfono, opt-in, botón de prueba,
+  historial y baja.
+- [ ] **Email primero (prioridad alta)** — resumen semanal por defecto y diario
+  opt-in; Resend o SMTP. Costo: ~USD 0–20/mes en total, no por cliente.
+- [ ] **Cron protegido** — `POST /api/reports/run` con `REPORT_CRON_SECRET`,
+  tick diario/horario y envío único por período.
+- [ ] **Botón "Compartir por WhatsApp"** en Estadísticas (manual, sin Meta).
+- [ ] **WhatsApp Cloud API (fase 2)** — plantillas es_AR, opt-in, webhook de
+  estados/bajas y número central. Costo: ~USD 0,026–0,03 por mensaje en AR.
+- Análisis completo, contenido por frecuencia y plan técnico en
+  `REPORTE-WHATSAPP.md`.
+
 ## Futuro — alta prioridad (en orden)
-1. **Puntos de fidelidad** — 1 punto por compra; tarjeta configurable (ej. 8 compras → 15% en la última), inicio de tarjeta configurable por el dueño.
-2. **Aviso al cliente** — seguimiento del pedido en `/menu` con SSE + push PWA (ver sección Notificaciones).
-3. **Pagos avanzados** — split, propina/descuento, reembolsos automáticos y conciliación completa (el pago online con Mercado Pago ya está).
-4. **Modo kiosco con PIN** — PIN de 4 dígitos por personal para tablets compartidas, sin email+contraseña.
-5. **Reporte diario al dueño** — ventas del día, ticket promedio y top platos por WhatsApp/email.
+1. **Reporte periódico al dueño por email (WhatsApp después)** — ventas, cobrado/pendiente, ticket promedio, top platos, tiempos de cocina, cancelaciones y caja. Frecuencia configurable (semanal por defecto; diaria/quincenal/mensual). Email primero con Resend/SMTP; WhatsApp Cloud API como fase 2. Ver `REPORTE-WHATSAPP.md`.
+2. **Puntos de fidelidad** — 1 punto por compra; tarjeta configurable (ej. 8 compras → 15% en la última), inicio de tarjeta configurable por el dueño.
+3. **Aviso al cliente** — seguimiento del pedido en `/menu` con SSE + push PWA (ver sección Notificaciones).
+4. **Pagos avanzados** — split, propina/descuento, pago online y conciliación.
+5. **Modo kiosco con PIN** — PIN de 4 dígitos por personal para tablets compartidas, sin email+contraseña.
 6. **Gestión de reservas** — calendario, turnos, no-shows, estado `reservada`. Producto aparte: 2–3 semanas.
 7. **Estadísticas de trabajadores** — perfil por trabajador visible solo para el administrador.
 8. **Mejorar módulo Configuración** — UI/UX, orden y separación de opciones nuevas.

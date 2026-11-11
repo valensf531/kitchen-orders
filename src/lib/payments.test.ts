@@ -7,7 +7,6 @@ describe('payments', () => {
     expect(isPaymentMethod('card')).toBe(true);
     expect(isPaymentMethod('transfer')).toBe(true);
     expect(isPaymentMethod('other')).toBe(true);
-    expect(isPaymentMethod('mercadopago')).toBe(true);
   });
 
   it('rechaza valores desconocidos y normaliza a efectivo', () => {

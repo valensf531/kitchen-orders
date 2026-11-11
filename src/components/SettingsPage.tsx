@@ -22,6 +22,7 @@ import {
   type MenuTheme,
 } from '@/lib/menu-theme';
 import { TableCardPreview } from './TableCardPreview';
+import { ConfirmDialog } from './ConfirmDialog';
 import {
   buildTableMenuUrl,
   buildTableCardPNG,
@@ -107,6 +108,14 @@ interface StaffMember {
   createdAt: string;
 }
 
+type SettingsConfirm =
+  | { kind: 'remove-staff'; id: string; name: string }
+  | { kind: 'reset-password'; member: StaffMember }
+  | { kind: 'delete-zone'; id: string; name: string; tableCount: number }
+  | { kind: 'delete-category'; id: string; name: string }
+  | { kind: 'delete-tag'; id: string; label: string }
+  | { kind: 'no-categories' };
+
 function TagBadge({ meta }: { meta: TagMeta }) {
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${TAG_TONE_BADGE_CLASSES[meta.tone]}`}>
@@ -181,6 +190,7 @@ export function SettingsPage() {
   const [deletingItemBusy, setDeletingItemBusy] = useState(false);
   const [deleteItemError, setDeleteItemError] = useState('');
   const [reorderingCategories, setReorderingCategories] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<SettingsConfirm | null>(null);
 
   /* Acceso efectivo (restaurante + rol) y personal vinculado. */
   const [restaurantId, setRestaurantId] = useState('');
@@ -197,6 +207,14 @@ export function SettingsPage() {
   const [submittingStaff, setSubmittingStaff] = useState(false);
   const [staffError, setStaffError] = useState('');
   const [staffNotice, setStaffNotice] = useState('');
+  /* Clave generada al resetear: se muestra en un modal grande para que el
+     admin no tenga que buscarla entre los avisos del formulario. */
+  const [revealedStaffPassword, setRevealedStaffPassword] = useState<{
+    name: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const [copiedRevealedPassword, setCopiedRevealedPassword] = useState(false);
 
   /* Marca del restaurante (nombre + logo para tarjetas y menú público). */
   const [brandingName, setBrandingName] = useState('');
@@ -605,8 +623,7 @@ export function SettingsPage() {
     }
   };
 
-  const handleDeleteStaff = async (id: string, name: string) => {
-    if (!window.confirm(`¿Quitar el acceso a ${name}? Ya no podrá entrar al restaurante.`)) return;
+  const handleDeleteStaff = async (id: string) => {
     setStaffError('');
     try {
       const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
@@ -642,13 +659,6 @@ export function SettingsPage() {
 
   const handleResetStaffPassword = async (member: StaffMember) => {
     const password = generateStaffPassword();
-    if (
-      !window.confirm(
-        `¿Resetear la contraseña de ${member.name}? Se cerrarán sus sesiones abiertas.`,
-      )
-    ) {
-      return;
-    }
     setStaffError('');
     setStaffNotice('');
     try {
@@ -661,11 +671,42 @@ export function SettingsPage() {
         setStaffError('No se pudo resetear la contraseña.');
         return;
       }
-      setStaffNotice(`Contraseña nueva de ${member.name}: ${password} (copiala ahora).`);
+      setStaffNotice(`Contraseña de ${member.name} actualizada.`);
+      setCopiedRevealedPassword(false);
+      setRevealedStaffPassword({
+        name: member.name,
+        email: member.email,
+        password,
+      });
     } catch {
       setStaffError('Error de red. Intentá de nuevo.');
     }
   };
+
+  const handleCopyRevealedPassword = async () => {
+    if (!revealedStaffPassword) return;
+    try {
+      await navigator.clipboard.writeText(revealedStaffPassword.password);
+      setCopiedRevealedPassword(true);
+      setTimeout(() => setCopiedRevealedPassword(false), 2000);
+    } catch {
+      /* Portapapeles no disponible: la clave queda visible para copiarla a mano. */
+    }
+  };
+
+  useEffect(() => {
+    if (!revealedStaffPassword) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setRevealedStaffPassword(null);
+    };
+    document.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [revealedStaffPassword]);
 
   const [newZoneName, setNewZoneName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -891,29 +932,25 @@ export function SettingsPage() {
 
   const handleDeleteZone = async (id: string) => {
     const zone = zones.find((z) => z.id === id);
-    const mesaCount = zone ? tables.filter((t) => t.zone === zone.slug).length : 0;
-    const warning =
-      mesaCount > 0
-        ? `¿Eliminar la zona "${zone?.name}"? También se eliminarán sus ${mesaCount} mesa(s).`
-        : `¿Estás seguro de eliminar esta zona?`;
-    if (confirm(warning)) {
-      setActionNotice('');
-      try {
-        const res = await fetch(`/api/zones/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          const removedSlugs = zone ? [zone.slug] : [];
-          setZones(prev => prev.filter(z => z.id !== id));
-          /* Las mesas en cascada ya no existen en el backend. */
-          if (removedSlugs.length > 0 || typeof data?.tablesDeleted === 'number') {
-            setTables(prev => prev.filter(t => !removedSlugs.includes(t.zone)));
-          }
-        } else {
-          setActionNotice('No se pudo eliminar la zona. Intentá de nuevo.');
+    setActionNotice('');
+    try {
+      const res = await fetch(`/api/zones/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const removedSlugs = zone ? [zone.slug] : [];
+        setZones(prev => prev.filter(z => z.id !== id));
+        /* Las mesas en cascada ya no existen en el backend. */
+        if (removedSlugs.length > 0 || typeof data?.tablesDeleted === 'number') {
+          setTables(prev => prev.filter(t => !removedSlugs.includes(t.zone)));
         }
-      } catch {
-        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
+      } else {
+        const data = await res.json().catch(() => null);
+        setActionNotice(
+          data?.error ?? 'No se pudo eliminar la zona. Intentá de nuevo.',
+        );
       }
+    } catch {
+      setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
     }
   };
 
@@ -972,19 +1009,17 @@ export function SettingsPage() {
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar esta categoría? Se eliminarán todos los productos asociados.')) {
-      setActionNotice('');
-      try {
-        const res = await fetch(`/api/menu/categories/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          setCategories(prev => prev.filter(c => c.id !== id));
-          setMenuItems(prev => prev.filter(i => i.categoryId !== id));
-        } else {
-          setActionNotice('No se pudo eliminar la categoría. Intentá de nuevo.');
-        }
-      } catch {
-        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
+    setActionNotice('');
+    try {
+      const res = await fetch(`/api/menu/categories/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setCategories(prev => prev.filter(c => c.id !== id));
+        setMenuItems(prev => prev.filter(i => i.categoryId !== id));
+      } else {
+        setActionNotice('No se pudo eliminar la categoría. Intentá de nuevo.');
       }
+    } catch {
+      setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
     }
   };
 
@@ -1225,19 +1260,17 @@ export function SettingsPage() {
   };
 
   const handleDeleteTag = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar esta etiqueta? Se quitará de todos los productos que la usan.')) {
-      setActionNotice('');
-      try {
-        const res = await fetch(`/api/menu/tags/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          setCustomTags(prev => prev.filter(t => t.id !== id));
-          setMenuItems(prev => prev.map(i => ({ ...i, tags: i.tags.filter(tag => tag !== id) })));
-        } else {
-          setActionNotice('No se pudo eliminar la etiqueta. Intentá de nuevo.');
-        }
-      } catch {
-        setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
+    setActionNotice('');
+    try {
+      const res = await fetch(`/api/menu/tags/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setCustomTags(prev => prev.filter(t => t.id !== id));
+        setMenuItems(prev => prev.map(i => ({ ...i, tags: i.tags.filter(tag => tag !== id) })));
+      } else {
+        setActionNotice('No se pudo eliminar la etiqueta. Intentá de nuevo.');
       }
+    } catch {
+      setActionNotice('Error de red. Revisá tu conexión e intentá de nuevo.');
     }
   };
 
@@ -1264,6 +1297,91 @@ export function SettingsPage() {
   const modernMenuUrl = typeof window !== 'undefined' && restaurantId
     ? `${publicOrigin}/menu-cafe?restaurant=${encodeURIComponent(restaurantId)}`
     : '/menu-cafe';
+
+  const confirmCopy = (() => {
+    switch (confirmAction?.kind) {
+      case 'remove-staff':
+        return {
+          title: `Quitar acceso a ${confirmAction.name}`,
+          message:
+            'Ya no podrá entrar al restaurante. Se cierran sus sesiones abiertas.',
+          confirmLabel: 'Quitar acceso',
+          danger: true,
+          hideCancel: false,
+        };
+      case 'reset-password':
+        return {
+          title: `Resetear contraseña de ${confirmAction.member.name}`,
+          message:
+            'Se genera una contraseña nueva y se cierran sus sesiones abiertas. La nueva clave se muestra al confirmar.',
+          confirmLabel: 'Resetear contraseña',
+          danger: false,
+          hideCancel: false,
+        };
+      case 'delete-zone':
+        return {
+          title: `Eliminar zona ${confirmAction.name}`,
+          message:
+            confirmAction.tableCount > 0
+              ? `También se eliminarán sus ${confirmAction.tableCount} mesa(s). Si hay cuentas abiertas, el sistema no lo va a permitir.`
+              : 'La zona se elimina. Si hay cuentas abiertas, el sistema no lo va a permitir.',
+          confirmLabel: 'Eliminar zona',
+          danger: true,
+          hideCancel: false,
+        };
+      case 'delete-category':
+        return {
+          title: `Eliminar categoría ${confirmAction.name}`,
+          message: 'Se eliminan todos los productos asociados. No se puede deshacer.',
+          confirmLabel: 'Eliminar categoría',
+          danger: true,
+          hideCancel: false,
+        };
+      case 'delete-tag':
+        return {
+          title: `Eliminar etiqueta ${confirmAction.label}`,
+          message: 'Se quita de todos los productos que la usan.',
+          confirmLabel: 'Eliminar etiqueta',
+          danger: true,
+          hideCancel: false,
+        };
+      case 'no-categories':
+        return {
+          title: 'Falta una categoría',
+          message: 'Primero creá al menos una categoría para poder agregar productos.',
+          confirmLabel: 'Entendido',
+          danger: false,
+          hideCancel: true,
+        };
+      default:
+        return null;
+    }
+  })();
+
+  const handleConfirmAction = () => {
+    const action = confirmAction;
+    if (!action) return;
+    setConfirmAction(null);
+    switch (action.kind) {
+      case 'remove-staff':
+        void handleDeleteStaff(action.id);
+        break;
+      case 'reset-password':
+        void handleResetStaffPassword(action.member);
+        break;
+      case 'delete-zone':
+        void handleDeleteZone(action.id);
+        break;
+      case 'delete-category':
+        void handleDeleteCategory(action.id);
+        break;
+      case 'delete-tag':
+        void handleDeleteTag(action.id);
+        break;
+      case 'no-categories':
+        break;
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6">
@@ -1447,7 +1565,18 @@ export function SettingsPage() {
                       <button onClick={() => { setEditingZone(zone); setNewZoneName(zone.name); setZoneError(''); setShowZoneModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
                         <Edit3 className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleDeleteZone(zone.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
+                      <button
+                        onClick={() =>
+                          setConfirmAction({
+                            kind: 'delete-zone',
+                            id: zone.id,
+                            name: zone.name,
+                            tableCount: tables.filter((t) => t.zone === zone.slug)
+                              .length,
+                          })
+                        }
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -1501,7 +1630,16 @@ export function SettingsPage() {
                           <button onClick={() => openEditTag(tag)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
                             <Edit3 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleDeleteTag(tag.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
+                          <button
+                            onClick={() =>
+                              setConfirmAction({
+                                kind: 'delete-tag',
+                                id: tag.id,
+                                label: tag.label,
+                              })
+                            }
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -1567,7 +1705,9 @@ export function SettingsPage() {
                           <option value="kitchen">Cocina</option>
                         </select>
                         <button
-                          onClick={() => handleResetStaffPassword(member)}
+                          onClick={() =>
+                            setConfirmAction({ kind: 'reset-password', member })
+                          }
                           className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
                           aria-label={`Resetear contraseña de ${member.name}`}
                           title="Resetear contraseña"
@@ -1575,7 +1715,13 @@ export function SettingsPage() {
                           <KeyRound className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteStaff(member.id, member.name)}
+                          onClick={() =>
+                            setConfirmAction({
+                              kind: 'remove-staff',
+                              id: member.id,
+                              name: member.name,
+                            })
+                          }
                           className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
                           aria-label={`Quitar acceso a ${member.name}`}
                         >
@@ -2164,7 +2310,17 @@ export function SettingsPage() {
                         <button onClick={() => { setEditingCategory(category); setNewCategoryName(category.name); setNewCategoryKind(category.kind ?? 'food'); setCategoryError(''); setShowCategoryModal(true); }} className="p-1 text-slate-400 hover:text-indigo-600" aria-label={`Editar ${category.name}`}>
                           <Edit3 className="w-3 h-3" />
                         </button>
-                        <button onClick={() => handleDeleteCategory(category.id)} className="p-1 text-slate-400 hover:text-rose-600" aria-label={`Eliminar ${category.name}`}>
+                        <button
+                          onClick={() =>
+                            setConfirmAction({
+                              kind: 'delete-category',
+                              id: category.id,
+                              name: category.name,
+                            })
+                          }
+                          className="p-1 text-slate-400 hover:text-rose-600"
+                          aria-label={`Eliminar ${category.name}`}
+                        >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
@@ -2181,7 +2337,7 @@ export function SettingsPage() {
                 action={
                 <button
                   onClick={() => {
-                    if (categories.length === 0) { alert('Primero debes crear al menos una categoría'); return; }
+                    if (categories.length === 0) { setConfirmAction({ kind: 'no-categories' }); return; }
                      setEditingItem(null); setNewItemName(''); setNewItemPrice(''); setNewItemCategory(categories[0].id); setNewItemImageUrl(''); setNewItemDescription(''); setNewItemIngredients(''); setNewItemTags([]); setNewItemFeatured(false); setImageError(''); setItemError(''); setShowItemModal(true);
                   }}
                   className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-all duration-150"
@@ -2824,6 +2980,93 @@ export function SettingsPage() {
               >
                 {deletingItemBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                 {deletingItemBusy ? 'Eliminando…' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmCopy && (
+        <ConfirmDialog
+          open
+          title={confirmCopy.title}
+          message={confirmCopy.message}
+          confirmLabel={confirmCopy.confirmLabel}
+          danger={confirmCopy.danger}
+          hideCancel={confirmCopy.hideCancel}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={handleConfirmAction}
+        />
+      )}
+
+      {revealedStaffPassword && (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setRevealedStaffPassword(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="staff-password-title"
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                  <KeyRound className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <h2 id="staff-password-title" className="text-lg font-bold text-slate-800">
+                    Contraseña nueva de {revealedStaffPassword.name}
+                  </h2>
+                  <p className="mt-1 truncate text-xs text-slate-500">{revealedStaffPassword.email}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRevealedStaffPassword(null)}
+                aria-label="Cerrar"
+                className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-4 text-center">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-amber-700">
+                  Copiala ahora y compartila
+                </p>
+                <p className="mt-2 select-all break-all font-mono text-2xl font-bold tracking-wider text-slate-900">
+                  {revealedStaffPassword.password}
+                </p>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                Por seguridad no se vuelve a mostrar. Se cerraron sus sesiones abiertas.
+              </p>
+            </div>
+
+            <div className="flex gap-2 p-5 pt-0">
+              <button
+                type="button"
+                onClick={() => void handleCopyRevealedPassword()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                {copiedRevealedPassword ? (
+                  <Check className="h-4 w-4 text-teal-600" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                {copiedRevealedPassword ? '¡Copiada!' : 'Copiar contraseña'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRevealedStaffPassword(null)}
+                className="flex-1 rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-teal-700"
+              >
+                Listo
               </button>
             </div>
           </div>

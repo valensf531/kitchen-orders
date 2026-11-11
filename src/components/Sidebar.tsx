@@ -363,6 +363,8 @@ export function Sidebar({
   };
 
   const handleSectionChange = (section: SidebarSection) => {
+    /* En móvil el drawer debe cerrarse al elegir una sección. */
+    setMobileOpen(false);
     onSectionChange(section);
   };
 

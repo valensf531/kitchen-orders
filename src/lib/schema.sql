@@ -201,6 +201,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_user_updated ON orders(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_user_paid ON orders(user_id, paid_at);
 CREATE INDEX IF NOT EXISTS idx_orders_table_id ON orders(table_id);
 CREATE INDEX IF NOT EXISTS idx_orders_cash_session ON orders(cash_session_id);
@@ -284,37 +285,6 @@ CREATE INDEX IF NOT EXISTS idx_cash_sessions_user_status
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_sessions_one_open
   ON cash_sessions(user_id)
   WHERE status = 'open';
-
--- Pagos online (Mercado Pago) y conciliación con pedidos/caja.
-CREATE TABLE IF NOT EXISTS payments (
-  id VARCHAR(50) PRIMARY KEY,
-  user_id VARCHAR(255) NOT NULL,
-  order_id VARCHAR(50) NOT NULL,
-  provider VARCHAR(20) NOT NULL DEFAULT 'mercadopago',
-  status VARCHAR(30) NOT NULL DEFAULT 'pending',
-  status_detail TEXT,
-  amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
-  currency VARCHAR(10) NOT NULL DEFAULT 'ARS',
-  preference_id VARCHAR(150),
-  mp_payment_id VARCHAR(100),
-  method VARCHAR(50),
-  init_point TEXT,
-  paid_at TIMESTAMP WITH TIME ZONE,
-  raw JSONB,
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_payments_user_created
-  ON payments(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_payments_order
-  ON payments(order_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_order_pending
-  ON payments(order_id)
-  WHERE status IN ('pending', 'in_process');
-CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_mp_id
-  ON payments(mp_payment_id)
-  WHERE mp_payment_id IS NOT NULL;
 
 -- Marca del restaurante para tarjetas QR plastificables y menú público.
 -- user_id = id del dueño (restaurantId efectivo). Solo el admin la edita.

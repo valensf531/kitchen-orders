@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import { Table, ZoneType, TableStatus, STATUS_CONFIG, SHAPE_CONFIG } from '@/types/table';
 import { useAccess } from '@/hooks/use-access';
 import { TableCardPreview } from './TableCardPreview';
+import { ConfirmDialog } from './ConfirmDialog';
 import { buildTableMenuUrl, buildTableCardPNG, downloadDataUrl, tableCardsPrintSheetHtml, openPrintWindow } from '@/lib/table-card';
 import { Plus, X, Hash, MapPin, Loader2, AlertCircle, Users, Circle, Square, RectangleHorizontal, Trash2, Edit3, CheckCircle, CreditCard, Banknote, QrCode, ExternalLink, Printer, Download, Minus } from 'lucide-react';
 
@@ -419,6 +420,10 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
   };
 
   const [statusError, setStatusError] = useState<Record<string, string>>({});
+  const [confirmTable, setConfirmTable] = useState<{
+    kind: 'release' | 'delete';
+    table: Table;
+  } | null>(null);
 
   const handleStatusChange = async (id: string, status: TableStatus) => {
     setStatusError((prev) => {
@@ -450,18 +455,28 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
   /* Liberar solo tiene sentido sin cuenta abierta: el backend lo bloquea
      (422) si hay pedidos por cobrar, y acá se muestra el motivo. */
   const handleFreeTable = (table: Table) => {
-    if (!confirm(`¿Liberar la mesa ${table.number}? Quedará disponible.`)) return;
-    void handleStatusChange(table.id, 'available');
+    setConfirmTable({ kind: 'release', table });
   };
 
-  const handleDeleteTable = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar esta mesa?')) return;
+  const handleConfirmTable = async () => {
+    if (!confirmTable) return;
+    const { kind, table } = confirmTable;
+    setConfirmTable(null);
+
+    if (kind === 'release') {
+      await handleStatusChange(table.id, 'available');
+      return;
+    }
+
     try {
-      const res = await fetch(`/api/tables/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Error al eliminar mesa');
+      const res = await fetch(`/api/tables/${table.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'No se pudo eliminar la mesa.');
+      }
       await fetchTables();
     } catch (err) {
-      console.error('Failed to delete table:', err);
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar la mesa.');
     }
   };
 
@@ -609,7 +624,7 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
                         <button onClick={() => openEditModal(table)} className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg">
                           <Edit3 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDeleteTable(table.id)} className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg">
+                        <button onClick={() => setConfirmTable({ kind: 'delete', table })} className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg">
                           <Trash2 className="w-4 h-4" />
                         </button>
                         </>
@@ -664,6 +679,29 @@ export function FloorPlan({ zone, zoneName }: FloorPlanProps) {
           </div>
         )}
       </div>
+
+      {confirmTable && (
+        <ConfirmDialog
+          open
+          title={
+            confirmTable.kind === 'delete'
+              ? `Eliminar mesa ${confirmTable.table.number}`
+              : `Liberar mesa ${confirmTable.table.number}`
+          }
+          message={
+            confirmTable.kind === 'delete'
+              ? 'Se elimina la mesa y su QR. Si tiene una cuenta abierta, el sistema no lo va a permitir.'
+              : 'La mesa quedará disponible. Si tiene una cuenta abierta, el sistema no lo va a permitir.'
+          }
+          confirmLabel={
+            confirmTable.kind === 'delete' ? 'Eliminar mesa' : 'Liberar mesa'
+          }
+          cancelLabel="Volver"
+          danger={confirmTable.kind === 'delete'}
+          onCancel={() => setConfirmTable(null)}
+          onConfirm={() => void handleConfirmTable()}
+        />
+      )}
 
       {showCreateModal && (
         <TableFormModal

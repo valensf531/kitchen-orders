@@ -8,7 +8,7 @@ import { Sidebar, SidebarSection, KitchenTab, DiningTab } from './Sidebar';
 import { TableManagement } from './TableManagement';
 import { DiningRoom } from './DiningRoom';
 import { SettingsPage } from './SettingsPage';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { Bell, BellOff, Volume2, VolumeX, X, AlertCircle } from 'lucide-react';
 import { CashierDashboard } from './CashierDashboard';
@@ -37,7 +37,10 @@ export function KitchenDisplay() {
 
   const online = useOnlineStatus();
   const { isAdmin, isKitchen, loaded: accessLoaded } = useAccess();
-  const ordersKey = orders.map((order) => order.id).join(',');
+  const ordersKey = useMemo(
+    () => orders.map((order) => order.id).join(','),
+    [orders],
+  );
   useNewOrderSound(ordersKey, soundEnabled);
   useWakeLock();
 
@@ -228,6 +231,8 @@ export function KitchenDisplay() {
   const processingCount = orders.filter(o => o.status === 'processing').length;
   const finishedCount = orders.filter(o => o.status === 'finished').length;
   const canceledCount = orders.filter(o => o.status === 'canceled').length;
+  const showAlertControls =
+    activeSection === 'kitchen' || activeSection === 'dining' || activeSection === 'cashier';
 
   if (loading) {
     return (
@@ -268,38 +273,40 @@ export function KitchenDisplay() {
         </div>
       )}
 
-      <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void enableNotifications()}
-          aria-pressed={notificationsEnabled}
-          title={
-            notificationsEnabled
-              ? 'Notificaciones activas'
-              : 'Activar notificaciones del navegador'
-          }
-          className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg transition-colors ${
-            notificationsEnabled
-              ? 'border-amber-500 bg-amber-500 text-white'
-              : 'border-slate-200 bg-white text-slate-400 hover:text-amber-600'
-          }`}
-        >
-          {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-        </button>
-        <button
-          type="button"
-          onClick={toggleSound}
-          aria-pressed={soundEnabled}
-          title={soundEnabled ? 'Silenciar alerta de pedidos' : 'Activar alerta sonora de pedidos'}
-          className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg transition-colors ${
-            soundEnabled
-              ? 'border-teal-600 bg-teal-600 text-white'
-              : 'border-slate-200 bg-white text-slate-400 hover:text-teal-600'
-          }`}
-        >
-          {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-        </button>
-      </div>
+      {showAlertControls && (
+        <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void enableNotifications()}
+            aria-pressed={notificationsEnabled}
+            title={
+              notificationsEnabled
+                ? 'Notificaciones activas'
+                : 'Activar notificaciones del navegador'
+            }
+            className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg transition-colors ${
+              notificationsEnabled
+                ? 'border-amber-500 bg-amber-500 text-white'
+                : 'border-slate-200 bg-white text-slate-400 hover:text-amber-600'
+            }`}
+          >
+            {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+          </button>
+          <button
+            type="button"
+            onClick={toggleSound}
+            aria-pressed={soundEnabled}
+            title={soundEnabled ? 'Silenciar alerta de pedidos' : 'Activar alerta sonora de pedidos'}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg transition-colors ${
+              soundEnabled
+                ? 'border-teal-600 bg-teal-600 text-white'
+                : 'border-slate-200 bg-white text-slate-400 hover:text-teal-600'
+            }`}
+          >
+            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          </button>
+        </div>
+      )}
 
       {readyNotice && !isKitchen && (
         <div className="fixed bottom-24 left-4 z-50 max-w-sm rounded-xl border border-teal-200 bg-white p-4 shadow-2xl">
@@ -334,7 +341,11 @@ export function KitchenDisplay() {
         </div>
       )}
 
-      <main className="lg:ml-64 min-h-screen pb-24 lg:pb-0">
+      <main
+        className={`lg:ml-64 min-h-screen pb-24 lg:pb-0 ${
+          showAlertControls ? 'pt-16' : ''
+        }`}
+      >
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white focus:rounded-lg">
           Saltar al contenido principal
         </a>

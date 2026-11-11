@@ -120,7 +120,10 @@ export function DiningRoom({ orders = [] }: { orders?: Order[] }) {
     fetchTables();
   }, [selectedZone]);
 
-  const availableTableNumbers = tables.map(t => t.number);
+  const availableTableNumbers = useMemo(
+    () => tables.map((table) => table.number).sort((a, b) => a - b),
+    [tables],
+  );
 
   /* Cuenta abierta de la mesa elegida: el mozo ve qué hay antes de sumar. */
   const tableAccount = useMemo(() => {
@@ -149,16 +152,27 @@ export function DiningRoom({ orders = [] }: { orders?: Order[] }) {
     };
   }, [orders, tableNumber, tables, selectedZone]);
 
-  const availableCategories = categories.filter(cat => 
-    menuItems.some(item => item.categoryId === cat.id && item.available)
+  const availableCategories = useMemo(() => {
+    const categoriesWithStock = new Set(
+      menuItems.filter((item) => item.available).map((item) => item.categoryId),
+    );
+    return categories.filter((category) => categoriesWithStock.has(category.id));
+  }, [categories, menuItems]);
+
+  const availableItems = useMemo(
+    () =>
+      menuItems.filter(
+        (item) => item.available && item.categoryId === selectedCategory,
+      ),
+    [menuItems, selectedCategory],
   );
 
-  const availableItems = menuItems.filter(item =>
-    item.available && item.categoryId === selectedCategory
-  );
-
-  const soldOutItems = menuItems.filter(item =>
-    !item.available && item.categoryId === selectedCategory
+  const soldOutItems = useMemo(
+    () =>
+      menuItems.filter(
+        (item) => !item.available && item.categoryId === selectedCategory,
+      ),
+    [menuItems, selectedCategory],
   );
 
   /* Marcar agotado / reponer directo desde la toma de pedidos. */
@@ -354,7 +368,7 @@ export function DiningRoom({ orders = [] }: { orders?: Order[] }) {
                       className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg bg-white text-slate-800"
                     >
                       <option value="">Seleccionar mesa...</option>
-                      {availableTableNumbers.sort((a, b) => a - b).map(num => (
+                      {availableTableNumbers.map(num => (
                         <option key={num} value={num}>Mesa {num}</option>
                       ))}
                     </select>

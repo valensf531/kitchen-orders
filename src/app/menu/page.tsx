@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   Minus,
@@ -350,21 +350,6 @@ function PublicMenu() {
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [onlinePaymentsEnabled, setOnlinePaymentsEnabled] = useState(false);
-  const [lastOrder, setLastOrder] = useState<{
-    id: string;
-    total: number;
-    displayNumber?: number;
-  } | null>(null);
-  const [payment, setPayment] = useState<{
-    id: string;
-    status: string;
-    amount: number;
-    initPoint: string;
-    qrDataUrl: string;
-  } | null>(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
-  const [paymentError, setPaymentError] = useState('');
   const [reopenRequested, setReopenRequested] = useState(false);
   const [tableLocked, setTableLocked] = useState(false);
   const idempotencyKeyRef = useRef<string | null>(null);
@@ -409,7 +394,6 @@ function PublicMenu() {
             ? data.currencySymbol.trim()
             : '$',
         );
-        setOnlinePaymentsEnabled(Boolean(data.onlinePaymentsEnabled));
         setAvailableTables(data.tables ?? []);
         setPublicZones(Array.isArray(data.zones) ? data.zones : []);
         setCategories(data.categories ?? []);
@@ -464,15 +448,25 @@ function PublicMenu() {
   );
 
   /* Secciones del menú: una por categoría, con nombre y cantidad de platos. */
+  const itemsByCategory = useMemo(() => {
+    const map = new Map<string, Item[]>();
+    for (const item of visibleItems) {
+      const list = map.get(item.categoryId) ?? [];
+      list.push(item);
+      map.set(item.categoryId, list);
+    }
+    return map;
+  }, [visibleItems]);
+
   const sections = useMemo(
     () =>
       categories
         .map((category) => ({
           category,
-          sectionItems: visibleItems.filter((item) => item.categoryId === category.id),
+          sectionItems: itemsByCategory.get(category.id) ?? [],
         }))
         .filter((section) => section.sectionItems.length > 0),
-    [categories, visibleItems],
+    [categories, itemsByCategory],
   );
 
   const featuredItems = useMemo(() => items.filter((item) => item.featured), [items]);
@@ -482,7 +476,11 @@ function PublicMenu() {
     [cart],
   );
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
-  const cartQty = (id: string) => cart.find((x) => x.id === id)?.quantity ?? 0;
+  const cartQtyById = useMemo(
+    () => new Map(cart.map((item) => [item.id, item.quantity])),
+    [cart],
+  );
+  const cartQty = (id: string) => cartQtyById.get(id) ?? 0;
   const money = (value: number) => `${currencySymbol}${(Number(value) || 0).toFixed(2)}`;
 
   const addToCart = (item: Item, quantity = 1, notes?: string) =>
@@ -568,19 +566,6 @@ function PublicMenu() {
         return;
       }
       idempotencyKeyRef.current = null;
-      const createdOrder = data?.order;
-      if (createdOrder?.id) {
-        setLastOrder({
-          id: createdOrder.id,
-          total: Number(createdOrder.total) || total,
-          displayNumber:
-            typeof createdOrder.displayNumber === 'number'
-              ? createdOrder.displayNumber
-              : undefined,
-        });
-      }
-      setPayment(null);
-      setPaymentError('');
       setSent(true);
       setCart([]);
       setNotes('');
@@ -591,191 +576,18 @@ function PublicMenu() {
     }
   };
 
-  const refreshPayment = useCallback(async (paymentId: string) => {
-    try {
-      const response = await fetch(`/api/public/payments/${paymentId}`, {
-        cache: 'no-store',
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok || !data?.payment) return;
-      setPayment((prev) =>
-        prev && prev.id === paymentId
-          ? {
-              ...prev,
-              status: String(data.payment.status),
-              amount: Number(data.payment.amount) || prev.amount,
-            }
-          : prev,
-      );
-    } catch {
-      /* El polling reintenta; no mostramos error por un corte momentáneo. */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!payment || (payment.status !== 'pending' && payment.status !== 'in_process')) {
-      return;
-    }
-    const paymentId = payment.id;
-    const interval = setInterval(() => {
-      void refreshPayment(paymentId);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [payment, refreshPayment]);
-
-  const startOnlinePayment = async () => {
-    if (!lastOrder || paymentLoading) return;
-    setPaymentLoading(true);
-    setPaymentError('');
-    try {
-      const response = await fetch('/api/public/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          restaurantId: restaurant,
-          orderId: lastOrder.id,
-          tableToken: publicToken,
-        }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok || !data?.payment) {
-        setPaymentError(data?.error || 'No se pudo iniciar el pago.');
-        return;
-      }
-      setPayment({
-        id: String(data.payment.id),
-        status: String(data.payment.status),
-        amount: Number(data.payment.amount) || lastOrder.total,
-        initPoint: String(data.payment.initPoint ?? ''),
-        qrDataUrl: String(data.payment.qrDataUrl ?? ''),
-      });
-    } catch {
-      setPaymentError('Error de red. Intentá de nuevo.');
-    } finally {
-      setPaymentLoading(false);
-    }
-  };
-
   if (sent) {
-    const pendingPayment =
-      payment && (payment.status === 'pending' || payment.status === 'in_process');
-    const failedPayment =
-      payment?.status === 'rejected' || payment?.status === 'cancelled';
-
     return (
       <main className="flex min-h-dvh items-center justify-center bg-slate-50 p-6">
         <div className="bg-white rounded-xl border border-slate-200 max-w-md p-8 text-center shadow-sm">
           <CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-emerald-500" aria-hidden="true" />
           <h1 className="text-2xl font-bold text-slate-800">¡Pedido enviado!</h1>
-          {lastOrder?.displayNumber && (
-            <p className="mt-1 text-sm font-bold text-teal-700">
-              Pedido #{lastOrder.displayNumber}
-            </p>
-          )}
           <p className="mt-2 text-slate-500">
-            La cocina ya recibió tu pedido. Podés pagar ahora o en caja.
+            La cocina ya recibió tu pedido. Podés volver a pedir cuando quieras.
           </p>
 
-          {onlinePaymentsEnabled && lastOrder && (
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left">
-              {payment?.status === 'approved' ? (
-                <div className="text-center" aria-live="polite">
-                  <CheckCircle2
-                    className="mx-auto h-10 w-10 text-emerald-500"
-                    aria-hidden="true"
-                  />
-                  <p className="mt-2 font-bold text-emerald-700">Pago aprobado</p>
-                  <p className="text-sm text-slate-500">
-                    {currencySymbol}
-                    {payment.amount.toFixed(2)}
-                  </p>
-                </div>
-              ) : failedPayment ? (
-                <div className="text-center">
-                  <p className="font-semibold text-rose-600">
-                    El pago no se completó.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void startOnlinePayment()}
-                    disabled={paymentLoading}
-                    className="mt-3 w-full rounded-lg bg-sky-500 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-sky-600 disabled:opacity-60"
-                  >
-                    {paymentLoading ? 'Generando pago…' : 'Reintentar pago'}
-                  </button>
-                </div>
-              ) : pendingPayment && payment ? (
-                <div className="text-center" aria-live="polite">
-                  <p className="text-sm font-bold text-slate-700">
-                    Escaneá el QR para pagar
-                  </p>
-                  {payment.qrDataUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element -- QR como data URL
-                    <img
-                      src={payment.qrDataUrl}
-                      alt="QR de Mercado Pago"
-                      className="mx-auto mt-3 h-52 w-52 rounded-lg border border-slate-200 bg-white p-2"
-                    />
-                  )}
-                  <p className="mt-2 text-xl font-black text-slate-800">
-                    {currencySymbol}
-                    {payment.amount.toFixed(2)}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Esperando confirmación de Mercado Pago…
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    <a
-                      href={payment.initPoint}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1 rounded-lg bg-sky-500 px-3 py-2.5 text-center text-sm font-bold text-white transition-colors hover:bg-sky-600"
-                    >
-                      Abrir Mercado Pago
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => void refreshPayment(payment.id)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
-                    >
-                      Actualizar
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <p className="text-sm font-bold text-slate-700">
-                    ¿Querés pagar ahora?
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Pagá online con Mercado Pago escaneando el QR. También podés
-                    pagar en caja.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void startOnlinePayment()}
-                    disabled={paymentLoading}
-                    className="mt-3 w-full rounded-lg bg-sky-500 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-sky-600 disabled:opacity-60"
-                  >
-                    {paymentLoading ? 'Generando pago…' : 'Pagar con Mercado Pago'}
-                  </button>
-                </>
-              )}
-              {paymentError && (
-                <p role="alert" className="mt-2 text-xs font-semibold text-rose-600">
-                  {paymentError}
-                </p>
-              )}
-            </div>
-          )}
-
           <button
-            onClick={() => {
-              setSent(false);
-              setPayment(null);
-              setPaymentError('');
-              setLastOrder(null);
-            }}
+            onClick={() => setSent(false)}
             className="mt-6 w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold text-sm transition-all duration-150"
           >
             Volver al menú
@@ -896,7 +708,7 @@ function PublicMenu() {
           </div>
 
           <nav className="scrollbar-hide -mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5" aria-label="Categorías del menú">
-            {categories.map((category) => (
+            {sections.map(({ category }) => (
               <a
                 key={category.id}
                 href={`#categoria-${category.id}`}

@@ -3,6 +3,7 @@
 import { Order, OrderStatus, OrderItem } from '@/types/order';
 import { Clock, Check, UtensilsCrossed, MessageSquare, Coffee, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface OrderCardProps {
   order: Order;
@@ -127,6 +128,7 @@ export function OrderCard({ order, orderNumber, onStatusChange, onItemDelivered 
   const [timeAgo, setTimeAgo] = useState('0s');
   const [minutesAgo, setMinutesAgo] = useState(0);
   const [timeInStatus, setTimeInStatus] = useState<{ received: string; processing: string }>({ received: '-', processing: '-' });
+  const [cancelOpen, setCancelOpen] = useState(false);
   const deliveredFromServer = useMemo(() => {
     const delivered = new Set<number>();
     order.items.forEach((item, idx) => {
@@ -147,11 +149,7 @@ export function OrderCard({ order, orderNumber, onStatusChange, onItemDelivered 
   }, []);
 
   const handleCancel = () => {
-    const reason = window.prompt(
-      `¿Cancelar el pedido #${String(orderNumber).padStart(3, '0')}? Motivo (opcional):`,
-    );
-    if (reason === null) return;
-    onStatusChange(order.id, 'canceled', reason.trim() || undefined);
+    setCancelOpen(true);
   };
 
   const handleDrinkToggle = (originalIndex: number) => {
@@ -399,6 +397,25 @@ export function OrderCard({ order, orderNumber, onStatusChange, onItemDelivered 
         <div className="text-center text-slate-500 font-semibold text-sm mt-auto py-2 bg-slate-100 rounded-lg">
           Pedido cancelado
         </div>
+      )}
+
+      {cancelOpen && (
+        <ConfirmDialog
+          open
+          title={`Cancelar pedido #${String(orderNumber).padStart(3, '0')}`}
+          message="Se quita de la cuenta de la mesa. El motivo queda registrado para auditoría."
+          inputLabel="Motivo"
+          inputPlaceholder="Ej. el cliente se fue, error de carga…"
+          multiline
+          confirmLabel="Cancelar pedido"
+          cancelLabel="Volver"
+          danger
+          onCancel={() => setCancelOpen(false)}
+          onConfirm={(reason) => {
+            setCancelOpen(false);
+            onStatusChange(order.id, 'canceled', reason.trim() || undefined);
+          }}
+        />
       )}
     </div>
   );

@@ -19,8 +19,7 @@ Se resolvieron los pendientes del checklist de salida a producción:
 - Salón: resumen de la cuenta abierta al tomar el pedido y refresco de mesas tras enviar.
 - Aviso "pedido listo" al mesero ya implementado (sonido + notificación + aviso visual).
 - Pagos base y cierre de caja completos.
-- Pago online con Mercado Pago (Checkout Pro + QR + webhook firmado + polling y conciliación con caja/estadísticas).
-- Split, propina/descuento y reembolsos automáticos quedan en `ROADMAP.md`.
+- Split, propina/descuento, pago online y reembolsos quedan en `ROADMAP.md`.
 
 ## Verificación automática
 

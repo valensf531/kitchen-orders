@@ -106,6 +106,7 @@ class OrderStore {
         await sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cash_session_id VARCHAR(50)`;
         await sql`CREATE SEQUENCE IF NOT EXISTS order_counter_seq AS BIGINT START 1`;
         await sql`CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders(user_id, created_at DESC)`;
+        await sql`CREATE INDEX IF NOT EXISTS idx_orders_user_updated ON orders(user_id, updated_at DESC)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_orders_user_paid ON orders(user_id, paid_at)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_orders_table_id ON orders(table_id)`;
         await sql`CREATE INDEX IF NOT EXISTS idx_orders_cash_session ON orders(cash_session_id)`;
@@ -404,12 +405,11 @@ class OrderStore {
       paidBy?: string | null;
       paidByName?: string | null;
       cashSessionId?: string | null;
-      paidAt?: string | null;
     },
   ): Promise<Order | undefined> {
     const sql = getSql();
     await this.ensureSchema();
-    const now = options.paidAt ?? new Date().toISOString();
+    const now = new Date().toISOString();
     const rows = await sql`
       UPDATE orders
       SET paid_at = ${now}, updated_at = ${now},

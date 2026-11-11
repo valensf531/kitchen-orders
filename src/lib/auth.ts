@@ -1,27 +1,20 @@
 import { betterAuth } from 'better-auth';
 import { nextCookies } from 'better-auth/next-js';
-import { Pool } from 'pg';
+import { getPool } from '@/lib/db';
 
 type AuthInstance = ReturnType<typeof betterAuth>;
 
-let _pool: Pool | undefined;
 let _auth: AuthInstance | undefined;
 
 export function getAuth(): AuthInstance {
   if (_auth) return _auth;
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
+  if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL environment variable is not set');
   }
-  if (!_pool) {
-    _pool = new Pool({
-      connectionString,
-      max: Number(process.env.DATABASE_POOL_MAX) || 10,
-    });
-  }
+  /* Mismo pool que el resto de la app: evita duplicar conexiones. */
   const baseUrl = process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_BASE_URL;
   _auth = betterAuth({
-    database: _pool,
+    database: getPool(),
     emailAndPassword: {
       enabled: true,
       /* Registro público cerrado: los dueños los da de alta el SaaS
@@ -51,9 +44,13 @@ export function getAuth(): AuthInstance {
     },
     plugins: [nextCookies()],
     /* Orígenes extra por env (uno por cliente en Dokploy, separados por coma).
-       better-auth ya confía en el origen de baseURL. */
+       better-auth ya confía en el origen de baseURL. En desarrollo Next puede
+       arrancar en otro puerto (3000 ocupado) o abrirse como 127.0.0.1, y
+       better-auth responde "Invalid origin"; cualquier puerto loopback sirve. */
     trustedOrigins: [
-      'http://localhost:3000',
+      ...(process.env.NODE_ENV === 'production'
+        ? []
+        : ['http://localhost:*', 'http://127.0.0.1:*']),
       ...(process.env.ADDITIONAL_TRUSTED_ORIGINS ?? '')
         .split(',')
         .map((origin) => origin.trim())

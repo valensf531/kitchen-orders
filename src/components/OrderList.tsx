@@ -4,7 +4,7 @@ import { Order, OrderStatus } from '@/types/order';
 import { OrderCard } from './OrderCard';
 import { getOrderDisplayNumber } from '@/lib/order-number';
 import { CheckCircle, XCircle, AlertTriangle, Clock, Flame, Loader2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 interface OrderListProps {
   orders: Order[];
@@ -23,15 +23,19 @@ export function OrderList({ orders, currentTab, onStatusChange, onItemDelivered 
     if (currentTab !== 'active') return;
     const updateCounts = () => {
       const now = Date.now();
-      const overdue = orders.filter(o => {
-        if (o.status === 'finished' || o.status === 'canceled') return false;
-        const mins = (now - new Date(o.createdAt).getTime()) / 60000;
-        return mins >= 25;
-      }).length;
-      
+      let overdue = 0;
+      let received = 0;
+      let processing = 0;
+      for (const order of orders) {
+        if (order.status === 'received') received += 1;
+        if (order.status === 'processing') processing += 1;
+        if (order.status === 'finished' || order.status === 'canceled') continue;
+        const mins = (now - new Date(order.createdAt).getTime()) / 60000;
+        if (mins >= 25) overdue += 1;
+      }
       setOverdueCount(overdue);
-      setReceivedCount(orders.filter(o => o.status === 'received').length);
-      setProcessingCount(orders.filter(o => o.status === 'processing').length);
+      setReceivedCount(received);
+      setProcessingCount(processing);
     };
 
     updateCounts();
@@ -39,16 +43,14 @@ export function OrderList({ orders, currentTab, onStatusChange, onItemDelivered 
     return () => clearInterval(interval);
   }, [orders, currentTab]);
 
-  const getFilteredOrders = () => {
+  const filteredOrders = useMemo(() => {
     if (currentTab === 'active') {
       return orders
-        .filter(o => o.status === 'received' || o.status === 'processing')
+        .filter((o) => o.status === 'received' || o.status === 'processing')
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     }
-    return orders.filter(o => o.status === currentTab);
-  };
-
-  const filteredOrders = getFilteredOrders();
+    return orders.filter((o) => o.status === currentTab);
+  }, [orders, currentTab]);
 
   return (
     <div className="p-4 sm:p-6">

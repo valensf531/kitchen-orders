@@ -2,7 +2,7 @@ export type OrderStatus = 'received' | 'processing' | 'finished' | 'canceled';
 
 export type OrderItemCategory = 'food' | 'drink';
 
-export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'other' | 'mercadopago';
+export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'other';
 
 export interface OrderItem {
   name: string;

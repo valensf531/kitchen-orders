@@ -77,7 +77,6 @@ try {
 
   /* Idempotente: limpia solo los datos del restaurante E2E. */
   for (const table of [
-    'payments',
     'orders',
     'cash_sessions',
     'tables',

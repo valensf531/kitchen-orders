@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Order, PaymentMethod } from '@/types/order';
 import { getOrderDisplayNumber } from '@/lib/order-number';
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from '@/lib/payments';
+import { ConfirmDialog } from './ConfirmDialog';
 import {
   Banknote,
   Ban,
@@ -38,7 +39,6 @@ type CashSummary = {
   cardTotal: number;
   transferTotal: number;
   otherTotal: number;
-  mercadopagoTotal: number;
 };
 
 type PayTarget =
@@ -52,7 +52,6 @@ const EMPTY_SUMMARY: CashSummary = {
   cardTotal: 0,
   transferTotal: 0,
   otherTotal: 0,
-  mercadopagoTotal: 0,
 };
 
 const amount = (value: number | string | undefined) => Number(value) || 0;
@@ -76,6 +75,7 @@ export function CashierDashboard({
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
   const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [pageError, setPageError] = useState('');
   const [currencySymbol, setCurrencySymbol] = useState('$');
   const [session, setSession] = useState<CashSession | null>(null);
@@ -162,8 +162,26 @@ export function CashierDashboard({
     return { ordersByTableId: byId, legacyOrdersByKey: legacy };
   }, [activeOrders]);
 
+  const ordersByTable = useMemo(() => {
+    const map = new Map<string, Order[]>();
+    for (const table of tables) {
+      const byId = ordersByTableId.get(table.id) ?? [];
+      const legacy =
+        legacyOrdersByKey.get(`${table.zone}:${table.number}`) ??
+        legacyOrdersByKey.get(`:${table.number}`) ??
+        [];
+      if (byId.length > 0 || legacy.length > 0) {
+        map.set(table.id, [...byId, ...legacy]);
+      }
+    }
+    return map;
+  }, [legacyOrdersByKey, ordersByTableId, tables]);
+
   const tableOrders = useCallback(
     (table: TableInfo) => {
+      const combined = ordersByTable.get(table.id);
+      if (combined) return combined;
+      /* La mesa pudo borrarse con el modal abierto: fallback por id/zona. */
       const byId = ordersByTableId.get(table.id) ?? [];
       const legacy =
         legacyOrdersByKey.get(`${table.zone}:${table.number}`) ??
@@ -171,7 +189,7 @@ export function CashierDashboard({
         [];
       return [...byId, ...legacy];
     },
-    [legacyOrdersByKey, ordersByTableId],
+    [legacyOrdersByKey, ordersByTable, ordersByTableId],
   );
 
   const orphanOrders = useMemo(() => {
@@ -188,7 +206,10 @@ export function CashierDashboard({
     });
   }, [activeOrders, tables]);
 
-  const openTotal = activeOrders.reduce((sum, order) => sum + amount(order.total), 0);
+  const openTotal = useMemo(
+    () => activeOrders.reduce((sum, order) => sum + amount(order.total), 0),
+    [activeOrders],
+  );
   const expectedCash = (session?.openingAmount ?? 0) + summary.cashTotal;
   const closingAmountNumber = Number(cashAmount.replace(',', '.'));
   const closingDifference = Number.isFinite(closingAmountNumber)
@@ -238,21 +259,21 @@ export function CashierDashboard({
     }
   };
 
-  const handleCancelOrder = async (order: Order) => {
-    const reason = window.prompt(
-      `¿Cancelar el pedido #${getOrderDisplayNumber(order)}? Motivo (opcional):`,
-    );
-    if (reason === null) {
-      return;
-    }
-    setCancelingId(order.id);
+  const handleCancelOrder = (order: Order) => {
+    setCancelTarget(order);
+  };
+
+  const confirmCancelOrder = async (reason: string) => {
+    if (!cancelTarget) return;
+    setCancelingId(cancelTarget.id);
     try {
-      await onCancelOrder(order.id, 'canceled', reason.trim() || undefined);
+      await onCancelOrder(cancelTarget.id, 'canceled', reason.trim() || undefined);
       await loadTables();
       onOrdersChanged?.();
-      if (payTarget?.kind === 'order' && payTarget.order.id === order.id) {
+      if (payTarget?.kind === 'order' && payTarget.order.id === cancelTarget.id) {
         setPayTarget(null);
       }
+      setCancelTarget(null);
     } finally {
       setCancelingId(null);
     }
@@ -396,12 +417,11 @@ export function CashierDashboard({
             )}
           </div>
           {session && (
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500 sm:grid-cols-5">
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500 sm:grid-cols-4">
               <span>Efectivo: {money(summary.cashTotal)}</span>
               <span>Tarjeta: {money(summary.cardTotal)}</span>
               <span>Transferencia: {money(summary.transferTotal)}</span>
               <span>Otros: {money(summary.otherTotal)}</span>
-              <span>Mercado Pago: {money(summary.mercadopagoTotal)}</span>
             </div>
           )}
         </div>
@@ -682,11 +702,34 @@ export function CashierDashboard({
                   disabled={paying || targetTotal(payTarget) <= 0}
                   className="mt-4 w-full rounded-xl bg-emerald-600 py-3.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  {paying ? 'Registrando cobro…' : 'Confirmar cobro y liberar mesa'}
+                  {paying
+                    ? 'Registrando cobro…'
+                    : payTarget.kind === 'table'
+                      ? 'Confirmar cobro y liberar mesa'
+                      : 'Confirmar cobro'}
                 </button>
               </div>
             </div>
           </div>
+        )}
+
+        {cancelTarget && (
+          <ConfirmDialog
+            open
+            title={`Cancelar pedido #${getOrderDisplayNumber(cancelTarget)}`}
+            message="Se quita de la cuenta de la mesa. El motivo queda registrado para auditoría."
+            inputLabel="Motivo"
+            inputPlaceholder="Ej. el cliente se fue, error de carga…"
+            multiline
+            confirmLabel="Cancelar pedido"
+            cancelLabel="Volver"
+            danger
+            busy={Boolean(cancelingId)}
+            onCancel={() => {
+              if (!cancelingId) setCancelTarget(null);
+            }}
+            onConfirm={(reason) => void confirmCancelOrder(reason)}
+          />
         )}
       </div>
     </div>

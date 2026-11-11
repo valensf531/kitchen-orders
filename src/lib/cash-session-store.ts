@@ -26,7 +26,6 @@ export interface CashSessionSummary {
   cardTotal: number;
   transferTotal: number;
   otherTotal: number;
-  mercadopagoTotal: number;
 }
 
 type CashSessionRow = {
@@ -167,8 +166,7 @@ class CashSessionStore {
         COALESCE(sum(total) FILTER (WHERE payment_method = 'cash'), 0) AS cash_total,
         COALESCE(sum(total) FILTER (WHERE payment_method = 'card'), 0) AS card_total,
         COALESCE(sum(total) FILTER (WHERE payment_method = 'transfer'), 0) AS transfer_total,
-        COALESCE(sum(total) FILTER (WHERE payment_method = 'other'), 0) AS other_total,
-        COALESCE(sum(total) FILTER (WHERE payment_method = 'mercadopago'), 0) AS mercadopago_total
+        COALESCE(sum(total) FILTER (WHERE payment_method = 'other'), 0) AS other_total
       FROM orders
       WHERE user_id = ${userId}
         AND cash_session_id = ${sessionId}
@@ -183,7 +181,6 @@ class CashSessionStore {
       cardTotal: amount(row.card_total as string | number),
       transferTotal: amount(row.transfer_total as string | number),
       otherTotal: amount(row.other_total as string | number),
-      mercadopagoTotal: amount(row.mercadopago_total as string | number),
     };
   }
 

@@ -136,7 +136,8 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   link.href = url;
   link.download = filename;
   link.click();
-  URL.revokeObjectURL(url);
+  /* Algunos navegadores necesitan que la URL siga viva un instante. */
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function Card({
@@ -332,31 +333,48 @@ export function StatsDashboard() {
     () => [...(data?.products ?? [])].sort((a, b) => b[productSort] - a[productSort]),
     [data, productSort],
   );
-  const maxProductValue =
-    sortedProducts.length > 0 ? Math.max(...sortedProducts.map((p) => p[productSort]), 1) : 1;
+  const maxProductValue = useMemo(
+    () =>
+      sortedProducts.length > 0
+        ? Math.max(...sortedProducts.map((p) => p[productSort]), 1)
+        : 1,
+    [sortedProducts, productSort],
+  );
 
-  const dayChartData = (data?.salesByDay ?? []).map((row) => ({
-    label: row.day.slice(5).replace('-', '/'),
-    value: row.revenue,
-    hint: row.day,
-  }));
-  const hourChartData = Array.from({ length: 24 }, (_, hour) => {
-    const row = data?.salesByHour.find((entry) => entry.hour === hour);
-    return { label: `${hour}h`, value: row?.revenue ?? 0, hint: `${hour}:00` };
-  });
+  const dayChartData = useMemo(
+    () =>
+      (data?.salesByDay ?? []).map((row) => ({
+        label: row.day.slice(5).replace('-', '/'),
+        value: row.revenue,
+        hint: row.day,
+      })),
+    [data],
+  );
+  const hourChartData = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, hour) => {
+        const row = data?.salesByHour.find((entry) => entry.hour === hour);
+        return { label: `${hour}h`, value: row?.revenue ?? 0, hint: `${hour}:00` };
+      }),
+    [data],
+  );
 
   /* Rango para nombres de archivo + totales exactos del período visible. */
   const fileRange = data
     ? `${data.range.from.slice(0, 10)}_a_${data.range.to.slice(0, 10)}`
     : 'rango';
 
-  const dayTotals = (data?.salesByDay ?? []).reduce(
-    (acc, row) => ({
-      orders: acc.orders + row.orders,
-      revenue: acc.revenue + row.revenue,
-      collected: acc.collected + row.collected,
-    }),
-    { orders: 0, revenue: 0, collected: 0 },
+  const dayTotals = useMemo(
+    () =>
+      (data?.salesByDay ?? []).reduce(
+        (acc, row) => ({
+          orders: acc.orders + row.orders,
+          revenue: acc.revenue + row.revenue,
+          collected: acc.collected + row.collected,
+        }),
+        { orders: 0, revenue: 0, collected: 0 },
+      ),
+    [data],
   );
 
   const dayFooter =
@@ -364,13 +382,31 @@ export function StatsDashboard() {
       ? `Total ${money(dayTotals.revenue)} · Cobrado ${money(dayTotals.collected)} · ${dayTotals.orders} pedidos`
       : undefined;
 
-  const peakHour = (data?.salesByHour ?? []).reduce<{ hour: number; revenue: number } | null>(
-    (best, row) => (!best || row.revenue > best.revenue ? { hour: row.hour, revenue: row.revenue } : best),
-    null,
+  const peakHour = useMemo(
+    () =>
+      (data?.salesByHour ?? []).reduce<{ hour: number; revenue: number } | null>(
+        (best, row) =>
+          !best || row.revenue > best.revenue ? { hour: row.hour, revenue: row.revenue } : best,
+        null,
+      ),
+    [data],
   );
   const hourFooter = peakHour
     ? `Pico ${peakHour.hour}:00 con ${money(peakHour.revenue)}`
     : undefined;
+
+  const categoryMaxRevenue = useMemo(
+    () => Math.max(...(data?.categories ?? []).map((category) => category.revenue), 1),
+    [data],
+  );
+  const zoneMaxRevenue = useMemo(
+    () => Math.max(...(data?.zones ?? []).map((zone) => zone.revenue), 1),
+    [data],
+  );
+  const paymentMaxTotal = useMemo(
+    () => Math.max(...(data?.paymentMethods ?? []).map((method) => method.total), 1),
+    [data],
+  );
 
   const handleExportXlsx = async () => {
     if (!data || exporting) return;
@@ -664,10 +700,6 @@ export function StatsDashboard() {
                     {data && data.paymentMethods.length > 0 ? (
                       <div className="space-y-2.5">
                         {data.paymentMethods.map((entry) => {
-                          const maxTotal = Math.max(
-                            ...data.paymentMethods.map((method) => method.total),
-                            1,
-                          );
                           const share =
                             summary.collected > 0
                               ? (entry.total / summary.collected) * 100
@@ -686,7 +718,7 @@ export function StatsDashboard() {
                                 <div
                                   className="h-full rounded-full bg-emerald-500"
                                   style={{
-                                    width: `${Math.max(1, (entry.total / maxTotal) * 100)}%`,
+                                    width: `${Math.max(1, (entry.total / paymentMaxTotal) * 100)}%`,
                                   }}
                                 />
                               </div>
@@ -862,7 +894,6 @@ export function StatsDashboard() {
                     {data && data.categories.length > 0 ? (
                       <div className="space-y-2.5">
                         {data.categories.map((category) => {
-                          const maxRevenue = Math.max(...data.categories.map((c) => c.revenue), 1);
                           return (
                             <div key={category.id}>
                               <div className="flex items-center justify-between gap-2 mb-1">
@@ -874,7 +905,7 @@ export function StatsDashboard() {
                               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full bg-violet-500"
-                                  style={{ width: `${Math.max(1, (category.revenue / maxRevenue) * 100)}%` }}
+                                  style={{ width: `${Math.max(1, (category.revenue / categoryMaxRevenue) * 100)}%` }}
                                 />
                               </div>
                               <p className="text-[11px] text-slate-400 mt-0.5">{category.units} unidades</p>
@@ -993,7 +1024,6 @@ export function StatsDashboard() {
                     {data && data.zones.length > 0 ? (
                       <div className="space-y-2.5">
                         {data.zones.map((zone) => {
-                          const maxRevenue = Math.max(...data.zones.map((z) => z.revenue), 1);
                           return (
                             <div key={zone.label}>
                               <div className="flex items-center justify-between gap-2 mb-1">
@@ -1005,7 +1035,7 @@ export function StatsDashboard() {
                               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full bg-teal-500"
-                                  style={{ width: `${Math.max(1, (zone.revenue / maxRevenue) * 100)}%` }}
+                                  style={{ width: `${Math.max(1, (zone.revenue / zoneMaxRevenue) * 100)}%` }}
                                 />
                               </div>
                               <p className="text-[11px] text-slate-400 mt-0.5">{zone.orders} pedidos</p>

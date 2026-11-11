@@ -10,7 +10,6 @@ const EXPECTED_TABLES = [
   'menu_items',
   'menu_tags',
   'orders',
-  'payments',
   'restaurant_settings',
   'session',
   'tables',

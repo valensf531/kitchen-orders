@@ -13,7 +13,6 @@ import { checkRateLimit } from '@/lib/rate-limit';
 import { publicMenuTag, revalidatePublicMenu } from '@/lib/menu-cache';
 import { revalidateStats } from '@/lib/stats-cache';
 import { verifyTableToken } from '@/lib/table-token';
-import { mercadopagoConfigured } from '@/lib/mercadopago';
 import { logError } from '@/lib/log';
 
 function restaurantId(request: NextRequest) {
@@ -64,7 +63,6 @@ const loadPublicMenu = (userId: string) =>
         theme: branding?.theme ?? DEFAULT_MENU_THEME,
         currencySymbol: branding?.currencySymbol ?? '$',
         currencyCode: branding?.currencyCode ?? 'ARS',
-        onlinePaymentsEnabled: mercadopagoConfigured(),
         branding: branding
           ? { name: branding.name, logoUrl: branding.logoUrl }
           : { name: '', logoUrl: null },
